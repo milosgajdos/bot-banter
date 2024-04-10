@@ -13,7 +13,7 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-func JetStreamRead(ctx context.Context, cons jetstream.Consumer, errCh chan error, done chan struct{}) {
+func JetStreamRead(_ context.Context, cons jetstream.Consumer, errCh chan error, done chan struct{}) {
 	defer log.Println("done reading from JetStream")
 	iter, err := cons.Messages()
 	if err != nil {
@@ -70,7 +70,7 @@ func LLMStream(ctx context.Context, js jetstream.JetStream, llm *ollama.LLM, pro
 	go JetStreamWrite(ctx, js, chunks, errCh, done)
 
 	_, err := llms.GenerateFromSinglePrompt(ctx, llm, prompt,
-		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+		llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
 			select {
 			case <-done:
 				return nil

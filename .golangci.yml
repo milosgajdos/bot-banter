@@ -13,6 +13,9 @@ linters:
     - goimports
     - prealloc
 
+issues:
+  exclude-dirs:
+    - vendor
 run:
   deadline: 2m
   skip-dirs:
