@@ -2,6 +2,8 @@ use async_nats::jetstream::{self, consumer::pull, stream::Config};
 use futures::StreamExt;
 use tokio;
 
+mod history;
+
 #[tokio::main]
 async fn main() -> Result<(), async_nats::Error> {
     let nats_url =
@@ -35,7 +37,7 @@ async fn main() -> Result<(), async_nats::Error> {
             message.payload.to_owned()
         );
         message.ack().await?;
-        js.publish("go".to_string(), "Thx for the message Golang".into())
+        js.publish("go".to_string(), "Thanks, tell me more!".into())
             .await?;
     }
 
