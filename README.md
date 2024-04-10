@@ -1,7 +1,24 @@
-# go-repo-template
+# bot-banter
 
-[![Build Status](https://github.com/milosgajdos/go-repo-template/workflows/CI/badge.svg)](https://github.com/milosgajdos/go-repo-template/actions?query=workflow%3ACI)
-[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/milosgajdos/go-repo-template)
+[![Build Status](https://github.com/milosgajdos/bot-banter/workflows/CI/badge.svg)](https://github.com/milosgajdos/bot-banter/actions?query=workflow%3ACI)
+[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/milosgajdos/bot-banter)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-This is a `Go` project repo template following the [official guide](https://docs.github.com/en/free-pro-team@latest/github/creating-cloning-and-archiving-repositories/creating-a-template-repository).
+
+# HOWTO
+
+Run NATS
+```
+nix-shell -p nats-server
+nats-server -js
+```
+
+Start a `gobot`:
+```
+go run ./gobot/...
+```
+
+Start a `rustbot`:
+```
+cargo run --manifest-path rustbot/Cargo.toml
+```
