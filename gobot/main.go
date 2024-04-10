@@ -54,7 +54,7 @@ func JetStreamReader(_ context.Context, cons jetstream.Consumer, prompts chan st
 	}
 }
 
-func JetStreamWriter(ctx context.Context, js jetstream.JetStream, prompts chan string, chunks chan []byte, errCh chan error, done chan struct{}) {
+func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []byte, errCh chan error, done chan struct{}) {
 	defer log.Println("done writing to JetStream")
 	msg := []byte{}
 	for {
@@ -111,7 +111,7 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 	}
 	log.Println("created gobot stream consumer")
 
-	go JetStreamWriter(ctx, js, prompts, chunks, errCh, done)
+	go JetStreamWriter(ctx, js, chunks, errCh, done)
 	go JetStreamReader(ctx, cons, prompts, errCh, done)
 }
 
