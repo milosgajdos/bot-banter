@@ -8,8 +8,8 @@ on:
 
 jobs:
 
-  ci:
-    name: Run CI
+  gobot:
+    name: Run gobot CI
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -85,3 +85,30 @@ jobs:
       uses: golangci/golangci-lint-action@v3
       with:
         version: v1.56
+
+  rustbot:
+    name: Run rustbot CI
+    runs-on: ubuntu-latest
+    env:
+      CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+    steps:
+      - name: check out code
+        uses: actions/checkout@v4
+
+      - name: cargo version and environment
+        id: vars
+        run: |
+          printf "Using cargo at: $(which cargo)\n"
+          printf "cargo version: $(cargo version)\n"
+
+      - name: setup rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: run build
+        run: |
+          cargo check --manifest-path rustbot/Cargo.toml --verbose
+          cargo build --manifest-path rustbot/Cargo.toml --release --verbose
+
+      - name: run tests
+        run: cargo test --manifest-path rustbot/Cargo.toml --verbose
