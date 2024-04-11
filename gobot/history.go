@@ -16,15 +16,23 @@ func NewHistory(size int) *History {
 	}
 }
 
-func (fs *History) Add(element string) {
-	fs.data[fs.pos] = element
-	fs.pos = (fs.pos + 1) % fs.size
+func (h *History) Add(element string) {
+	h.data[h.pos] = element
+	h.pos = (h.pos + 1) % h.size
 }
 
-func (fs *History) String() string {
-	result := make([]string, fs.size)
-	for i := 0; i < fs.size; i++ {
-		result[i] = fs.data[(fs.pos+i)%fs.size]
+func (h *History) String() string {
+	sb := strings.Builder{}
+	sb.Grow(h.size * (len(h.data[0]) + 1))
+
+	idx := h.pos
+	for i := 0; i < h.size; i++ {
+		sb.WriteString(h.data[idx])
+		if i < h.size-1 {
+			sb.WriteByte('\n')
+		}
+		idx = (idx + 1) % h.size
 	}
-	return strings.Join(result, "\n")
+
+	return sb.String()
 }

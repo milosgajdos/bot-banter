@@ -1,14 +1,14 @@
 use std::fmt;
 
-struct FixedSizeSlice {
+struct History {
     data: Vec<String>,
     size: usize,
     pos: usize,
 }
 
-impl FixedSizeSlice {
+impl History {
     fn new(size: usize) -> Self {
-        FixedSizeSlice {
+        History {
             data: vec![String::new(); size],
             size,
             pos: 0,
@@ -29,7 +29,7 @@ impl FixedSizeSlice {
     }
 }
 
-impl fmt::Display for FixedSizeSlice {
+impl fmt::Display for History {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result = Vec::with_capacity(self.size);
         for i in 0..self.size {
