@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"os/signal"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -13,63 +14,78 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-func handleError(err error, errCh chan error, done chan struct{}) {
+const (
+	streamName  = "banter"
+	consName    = "gobot"
+	goSubject   = "go"
+	rustSubject = "rust"
+	historySize = 50
+)
+
+func handleError(ctx context.Context, err error, errCh chan error) {
+	log.Printf("error: %v", err)
 	select {
-	case <-done:
+	case <-ctx.Done():
 	case errCh <- err:
 	}
 }
 
-func JetStreamReader(_ context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error, done chan struct{}) {
+func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
 	defer log.Println("done reading from JetStream")
 	iter, err := cons.Messages()
 	if err != nil {
-		handleError(err, errCh, done)
+		handleError(ctx, err, errCh)
 		return
 	}
+	go func() {
+		<-ctx.Done()
+		iter.Stop()
+	}()
+	// NOTE: we probably dont need this
+	// if there is an error, we cancel
+	// the context which will unblock the
+	// goroutine just above.
 	defer iter.Stop()
 
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		default:
 			msg, err := iter.Next()
 			if err != nil {
-				handleError(err, errCh, done)
+				handleError(ctx, err, errCh)
 				return
 			}
-			log.Printf("Received a JetStream message: %s", string(msg.Data()))
+			log.Printf("\n[rustbot]: %s", string(msg.Data()))
 			if err := msg.Ack(); err != nil {
-				handleError(err, errCh, done)
+				handleError(ctx, err, errCh)
 				return
 			}
 			select {
-			case <-done:
+			case <-ctx.Done():
 				return
 			case prompts <- string(msg.Data()):
-				log.Println("sending a new prompt to LLM: ", string(msg.Data()))
 			}
 		}
 	}
 }
 
-func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []byte, errCh chan error, done chan struct{}) {
+func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []byte, errCh chan error) {
 	defer log.Println("done writing to JetStream")
 	msg := []byte{}
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
-				log.Println("publishing message to JetStream:", string(msg))
-				_, err := js.Publish(ctx, "rust", msg)
+				log.Printf("\n[gobot]: %s", string(msg))
+				_, err := js.Publish(ctx, rustSubject, msg)
 				if err != nil {
-					handleError(err, errCh, done)
+					handleError(ctx, err, errCh)
 					return
 				}
-				log.Println("Successfully published to JetStream")
 				// reset the msg slice instead of reallocating
 				msg = msg[:0]
 				break
@@ -79,64 +95,59 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 	}
 }
 
-func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string, chunks chan []byte, errCh chan error, done chan struct{}) {
+func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string, chunks chan []byte, errCh chan error) {
 	stream, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     "banter",
-		Subjects: []string{"go", "rust"},
+		Name:     streamName,
+		Subjects: []string{goSubject, rustSubject},
 	})
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
-			log.Printf("failed creating stream: %v", err)
-			handleError(err, errCh, done)
+			handleError(ctx, err, errCh)
 			return
 		}
 		var jsErr error
-		stream, jsErr = js.Stream(ctx, "banter")
+		stream, jsErr = js.Stream(ctx, streamName)
 		if jsErr != nil {
-			log.Printf("failed getting JS handle: %v", jsErr)
-			handleError(err, errCh, done)
+			handleError(ctx, err, errCh)
 			return
 		}
 	}
-	log.Println("connected to stream")
+	log.Printf("connected to stream: %s", streamName)
 
 	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:       "go",
-		FilterSubject: "go",
+		Durable:       consName,
+		FilterSubject: goSubject,
 	})
 	if err != nil {
-		log.Printf("failed creating go consumer: %v", err)
-		handleError(err, errCh, done)
+		handleError(ctx, err, errCh)
 		return
 	}
-	log.Println("created gobot stream consumer")
+	log.Println("created stream consumer")
 
-	go JetStreamWriter(ctx, js, chunks, errCh, done)
-	go JetStreamReader(ctx, cons, prompts, errCh, done)
+	go JetStreamWriter(ctx, js, chunks, errCh)
+	go JetStreamReader(ctx, cons, prompts, errCh)
 }
 
-func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks chan []byte, errCh chan error, done chan struct{}) {
+func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks chan []byte, errCh chan error) {
 	defer log.Println("done streaming LLM")
-	chat := NewHistory(10)
+	chat := NewHistory(historySize)
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		case prompt := <-prompts:
-			log.Println("received LLM prompt:", prompt)
 			chat.Add(prompt)
 			_, err := llms.GenerateFromSinglePrompt(ctx, llm, chat.String(),
 				llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
 					select {
-					case <-done:
+					case <-ctx.Done():
 						return nil
 					case chunks <- chunk:
 						return nil
 					}
 				}))
-			log.Println("done streaming LLM")
 			if err != nil {
-				handleError(err, errCh, done)
+				handleError(ctx, err, errCh)
 				return
 			}
 		}
@@ -144,6 +155,15 @@ func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks
 }
 
 func main() {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	defer func() {
+		signal.Stop(c)
+		cancel()
+	}()
+
 	url := os.Getenv("NATS_URL")
 	if url == "" {
 		url = nats.DefaultURL
@@ -156,49 +176,56 @@ func main() {
 	// nolint:errcheck
 	defer nc.Drain()
 
+	log.Println("connecting to NATS")
+
 	js, err := jetstream.New(nc)
 	if err != nil {
-		log.Fatalf("failed creating a new jetstream: %v", err)
+		log.Fatalf("failed creating a new stream: %v", err)
 	}
+
+	log.Println("connecting to ollama")
 
 	llm, err := ollama.New(ollama.WithModel("llama2"))
 	if err != nil {
-		log.Fatal("Failed creating LLM client: ", err)
+		log.Fatal("failed creating LLM client: ", err)
 	}
 
 	errCh := make(chan error, 1)
-	done := make(chan struct{})
 	chunks := make(chan []byte)
 	prompts := make(chan string)
 
-	ctx := context.Background()
-	go LLMStream(ctx, llm, prompts, chunks, errCh, done)
-	go JetStream(ctx, js, prompts, chunks, errCh, done)
-
 	go func() {
-		if err := <-errCh; err != nil {
-			log.Println("error streaming: ", err)
-			close(done)
+		select {
+		case <-c:
+			log.Println("stopping: got interrupt")
+		case <-ctx.Done():
+			log.Println("stopping: context cancelled")
+		case err := <-errCh:
+			if err != nil {
+				log.Printf("stopping due to error: %v", err)
+			}
 		}
+		log.Println("cancelling context")
+		cancel()
 	}()
 
-GameOver:
-	for {
-		select {
-		case <-done:
-			break GameOver
-		default:
-			reader := bufio.NewReader(os.Stdin)
-			prompt, err := reader.ReadString('\n')
-			if err != nil {
-				log.Fatal("Failed reading seed prompt: ", err)
-			}
-			select {
-			case prompts <- prompt:
-			case <-done:
-				break GameOver
-			}
-			log.Println("Let's continue talking")
-		}
+	log.Println("launching workers")
+
+	go LLMStream(ctx, llm, prompts, chunks, errCh)
+	go JetStream(ctx, js, prompts, chunks, errCh)
+
+	log.Println("enter your prompt")
+	reader := bufio.NewReader(os.Stdin)
+	prompt, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal("failed reading seed prompt: ", err)
 	}
+
+	// send the prompt or exit
+	select {
+	case prompts <- prompt:
+	case <-ctx.Done():
+	}
+
+	<-ctx.Done()
 }
