@@ -13,6 +13,14 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
+const (
+	streamName  = "banter"
+	consName    = "gobot"
+	goSubject   = "go"
+	rustSubject = "rust"
+	historySize = 50
+)
+
 func handleError(err error, errCh chan error, done chan struct{}) {
 	select {
 	case <-done:
@@ -39,7 +47,7 @@ func JetStreamReader(_ context.Context, cons jetstream.Consumer, prompts chan st
 				handleError(err, errCh, done)
 				return
 			}
-			log.Printf("Received a JetStream message: %s", string(msg.Data()))
+			log.Printf("received a JetStream message: %s", string(msg.Data()))
 			if err := msg.Ack(); err != nil {
 				handleError(err, errCh, done)
 				return
@@ -48,7 +56,7 @@ func JetStreamReader(_ context.Context, cons jetstream.Consumer, prompts chan st
 			case <-done:
 				return
 			case prompts <- string(msg.Data()):
-				log.Println("sending a new prompt to LLM: ", string(msg.Data()))
+				log.Println("ent a new prompt to LLM: ", string(msg.Data()))
 			}
 		}
 	}
@@ -64,12 +72,11 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
 				log.Println("publishing message to JetStream:", string(msg))
-				_, err := js.Publish(ctx, "rust", msg)
+				_, err := js.Publish(ctx, rustSubject, msg)
 				if err != nil {
 					handleError(err, errCh, done)
 					return
 				}
-				log.Println("Successfully published to JetStream")
 				// reset the msg slice instead of reallocating
 				msg = msg[:0]
 				break
@@ -81,8 +88,8 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 
 func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string, chunks chan []byte, errCh chan error, done chan struct{}) {
 	stream, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     "banter",
-		Subjects: []string{"go", "rust"},
+		Name:     streamName,
+		Subjects: []string{goSubject, rustSubject},
 	})
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
@@ -91,25 +98,25 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 			return
 		}
 		var jsErr error
-		stream, jsErr = js.Stream(ctx, "banter")
+		stream, jsErr = js.Stream(ctx, streamName)
 		if jsErr != nil {
-			log.Printf("failed getting JS handle: %v", jsErr)
+			log.Printf("failed getting stream %s handle: %v", streamName, jsErr)
 			handleError(err, errCh, done)
 			return
 		}
 	}
-	log.Println("connected to stream")
+	log.Printf("connected to stream: %s", streamName)
 
 	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:       "go",
-		FilterSubject: "go",
+		Durable:       consName,
+		FilterSubject: goSubject,
 	})
 	if err != nil {
-		log.Printf("failed creating go consumer: %v", err)
+		log.Printf("failed creating consumer: %v", err)
 		handleError(err, errCh, done)
 		return
 	}
-	log.Println("created gobot stream consumer")
+	log.Println("created stream consumer")
 
 	go JetStreamWriter(ctx, js, chunks, errCh, done)
 	go JetStreamReader(ctx, cons, prompts, errCh, done)
@@ -117,7 +124,7 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 
 func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks chan []byte, errCh chan error, done chan struct{}) {
 	defer log.Println("done streaming LLM")
-	chat := NewHistory(10)
+	chat := NewHistory(historySize)
 	for {
 		select {
 		case <-done:
@@ -158,12 +165,18 @@ func main() {
 
 	js, err := jetstream.New(nc)
 	if err != nil {
-		log.Fatalf("failed creating a new jetstream: %v", err)
+		log.Fatalf("failed creating a new stream: %v", err)
 	}
 
 	llm, err := ollama.New(ollama.WithModel("llama2"))
 	if err != nil {
-		log.Fatal("Failed creating LLM client: ", err)
+		log.Fatal("failed creating LLM client: ", err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	prompt, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal("failed reading seed prompt: ", err)
 	}
 
 	errCh := make(chan error, 1)
@@ -171,34 +184,22 @@ func main() {
 	chunks := make(chan []byte)
 	prompts := make(chan string)
 
-	ctx := context.Background()
-	go LLMStream(ctx, llm, prompts, chunks, errCh, done)
-	go JetStream(ctx, js, prompts, chunks, errCh, done)
-
 	go func() {
 		if err := <-errCh; err != nil {
-			log.Println("error streaming: ", err)
+			log.Printf("ending chat due to error: %v", err)
 			close(done)
 		}
 	}()
 
-GameOver:
-	for {
-		select {
-		case <-done:
-			break GameOver
-		default:
-			reader := bufio.NewReader(os.Stdin)
-			prompt, err := reader.ReadString('\n')
-			if err != nil {
-				log.Fatal("Failed reading seed prompt: ", err)
-			}
-			select {
-			case prompts <- prompt:
-			case <-done:
-				break GameOver
-			}
-			log.Println("Let's continue talking")
-		}
+	ctx := context.Background()
+	go LLMStream(ctx, llm, prompts, chunks, errCh, done)
+	go JetStream(ctx, js, prompts, chunks, errCh, done)
+
+	// send the prompt or exit
+	select {
+	case prompts <- prompt:
+	case <-done:
 	}
+
+	<-done
 }
