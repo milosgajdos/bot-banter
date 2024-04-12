@@ -32,7 +32,6 @@ async fn llm_stream(
     let mut history = History::new(HIST_SIZE);
 
     while let Some(prompt) = prompts.recv().await {
-        println!("received prompt: {}", prompt);
         history.add(prompt.clone());
         let mut stream = llm
             .generate_stream(GenerationRequest::new(MODEL.to_owned(), history.string()))
@@ -55,10 +54,7 @@ async fn jetstream_read(
 ) -> Result<()> {
     let mut messages = cons.messages().await?;
     while let Some(Ok(message)) = messages.next().await {
-        println!(
-            "received a JetStream message {:?}",
-            message.payload.to_owned()
-        );
+        println!("\n[gobot]: {:?}", message.payload.to_owned());
         message.ack().await?;
         // NOTE: maybe we can send an empty string of the conversion fails?
         let prompt = String::from_utf8(message.payload.to_vec())?;
@@ -73,7 +69,7 @@ async fn jetstream_write(js: jetstream::Context, mut chunks: Receiver<Bytes>) ->
     while let Some(chunk) = chunks.recv().await {
         if chunk.is_empty() {
             let msg = String::from_utf8(b.to_vec()).unwrap();
-            println!("publishing message to JetStream: {}", msg);
+            println!("\n[rustbot]: {}", msg);
             js.publish(GO_SUBJECT.to_string(), b.clone().freeze())
                 .await?;
             b.clear();
@@ -124,7 +120,7 @@ async fn main() -> Result<()> {
     tokio::select! {
         result = &mut llm_stream_task => {
             if let Err(e) = result {
-                eprintln!("llm_stream encountered an error: {}", e);
+                eprintln!("shutting down, llm_stream encountered an error: {}", e);
                 jetstream_write_task.abort();
                 jetstream_read_task.abort();
                 return Err(e.into());
@@ -132,7 +128,7 @@ async fn main() -> Result<()> {
         }
         result = &mut jetstream_write_task => {
             if let Err(e) = result {
-                eprintln!("jetstream_write encountered an error: {}", e);
+                eprintln!("shutting down, jetstream_write encountered an error: {}", e);
                 llm_stream_task.abort();
                 jetstream_read_task.abort();
                 return Err(e.into());
@@ -140,14 +136,14 @@ async fn main() -> Result<()> {
         }
         result = &mut jetstream_read_task => {
             if let Err(e) = result {
-                eprintln!("jetstream_read encountered an error: {}", e);
+                eprintln!("shutting down, jetstream_read encountered an error: {}", e);
                 llm_stream_task.abort();
                 jetstream_write_task.abort();
                 return Err(e.into());
             }
         }
         _ = signal::ctrl_c() => {
-            println!("Received SIGINT signal, shutting down gracefully...");
+            println!("shutting down, received SIGINT signal...");
             llm_stream_task.abort();
             jetstream_write_task.abort();
             jetstream_read_task.abort();

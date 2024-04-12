@@ -57,7 +57,7 @@ func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan 
 				handleError(ctx, err, errCh)
 				return
 			}
-			log.Printf("received a JetStream message: %s", string(msg.Data()))
+			log.Printf("\n[rustbot]: %s", string(msg.Data()))
 			if err := msg.Ack(); err != nil {
 				handleError(ctx, err, errCh)
 				return
@@ -66,7 +66,6 @@ func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan 
 			case <-ctx.Done():
 				return
 			case prompts <- string(msg.Data()):
-				log.Println("ent a new prompt to LLM: ", string(msg.Data()))
 			}
 		}
 	}
@@ -81,7 +80,7 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 			return
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
-				log.Println("publishing message to JetStream:", string(msg))
+				log.Printf("\n[gobot]: %s", string(msg))
 				_, err := js.Publish(ctx, rustSubject, msg)
 				if err != nil {
 					handleError(ctx, err, errCh)
@@ -103,14 +102,12 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 	})
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
-			log.Printf("failed creating stream: %v", err)
 			handleError(ctx, err, errCh)
 			return
 		}
 		var jsErr error
 		stream, jsErr = js.Stream(ctx, streamName)
 		if jsErr != nil {
-			log.Printf("failed getting stream %s handle: %v", streamName, jsErr)
 			handleError(ctx, err, errCh)
 			return
 		}
@@ -122,7 +119,6 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 		FilterSubject: goSubject,
 	})
 	if err != nil {
-		log.Printf("failed creating consumer: %v", err)
 		handleError(ctx, err, errCh)
 		return
 	}
@@ -140,7 +136,6 @@ func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks
 		case <-ctx.Done():
 			return
 		case prompt := <-prompts:
-			log.Println("received LLM prompt:", prompt)
 			chat.Add(prompt)
 			_, err := llms.GenerateFromSinglePrompt(ctx, llm, chat.String(),
 				llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
@@ -151,7 +146,6 @@ func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks
 						return nil
 					}
 				}))
-			log.Println("done streaming LLM")
 			if err != nil {
 				handleError(ctx, err, errCh)
 				return
