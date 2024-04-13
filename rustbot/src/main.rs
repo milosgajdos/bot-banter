@@ -4,22 +4,23 @@ use async_nats::jetstream::{
     stream,
 };
 use bytes::{Bytes, BytesMut};
-use futures::StreamExt;
 use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use tokio::{
     self, signal,
     sync::mpsc::{self, Receiver, Sender},
 };
+use tokio_stream::StreamExt;
 
 mod history;
 
 const NATS_URL: &str = "nats://localhost:4222";
 const HIST_SIZE: usize = 50;
-const MODEL: &str = "llama2:latest";
+const MODEL_NAME: &str = "llama2:latest";
 const STREAM_NAME: &str = "banter";
-const CONSUMER_NAME: &str = "rustbot";
-const RUST_SUBJECT: &str = "rust";
-const GO_SUBJECT: &str = "go";
+const BOT_NAME: &str = "rustbot";
+const BOT_SUB_SUBJECT: &str = "rust";
+const BOT_PUB_SUBJECT: &str = "go";
+const BOT_PUB_NAME: &str = "gobot";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -28,13 +29,17 @@ async fn llm_stream(
     mut prompts: Receiver<String>,
     chunks: Sender<Bytes>,
 ) -> Result<()> {
+    println!("launched LLM stream");
     use history::History;
     let mut history = History::new(HIST_SIZE);
 
     while let Some(prompt) = prompts.recv().await {
         history.add(prompt.clone());
         let mut stream = llm
-            .generate_stream(GenerationRequest::new(MODEL.to_owned(), history.string()))
+            .generate_stream(GenerationRequest::new(
+                MODEL_NAME.to_owned(),
+                history.string(),
+            ))
             .await?;
 
         while let Some(res) = stream.next().await {
@@ -52,9 +57,10 @@ async fn jetstream_read(
     cons: consumer::Consumer<pull::Config>,
     prompts: Sender<String>,
 ) -> Result<()> {
+    println!("launched JetStream Reader");
     let mut messages = cons.messages().await?;
     while let Some(Ok(message)) = messages.next().await {
-        println!("\n[gobot]: {:?}", message.payload.to_owned());
+        println!("\n[{}]: {:?}", BOT_PUB_NAME, message.payload.to_owned());
         message.ack().await?;
         // NOTE: maybe we can send an empty string of the conversion fails?
         let prompt = String::from_utf8(message.payload.to_vec())?;
@@ -65,12 +71,13 @@ async fn jetstream_read(
 }
 
 async fn jetstream_write(js: jetstream::Context, mut chunks: Receiver<Bytes>) -> Result<()> {
+    println!("launched JetStream Writer");
     let mut b = BytesMut::new();
     while let Some(chunk) = chunks.recv().await {
         if chunk.is_empty() {
             let msg = String::from_utf8(b.to_vec()).unwrap();
-            println!("\n[rustbot]: {}", msg);
-            js.publish(GO_SUBJECT.to_string(), b.clone().freeze())
+            println!("\n[{}]: {}", BOT_NAME, msg);
+            js.publish(BOT_PUB_SUBJECT.to_string(), b.clone().freeze())
                 .await?;
             b.clear();
             continue;
@@ -97,19 +104,19 @@ async fn main() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    println!("connected to stream: {}", STREAM_NAME);
 
     let cons = stream
         .create_consumer(pull::Config {
-            durable_name: Some(CONSUMER_NAME.to_string()),
-            filter_subject: RUST_SUBJECT.to_string(),
+            durable_name: Some(BOT_NAME.to_string()),
+            filter_subject: BOT_SUB_SUBJECT.to_string(),
             ..Default::default()
         })
         .await?;
-    println!("created stream consumer");
 
     let (prompts_tx, prompts_rx) = mpsc::channel::<String>(32);
     let (chunks_tx, chunks_rx) = mpsc::channel::<Bytes>(32);
+
+    println!("launching {} workers", BOT_NAME);
 
     let llm_stream_task = tokio::spawn(llm_stream(ollama, prompts_rx, chunks_tx));
     let jetstream_write_task = tokio::spawn(jetstream_write(js, chunks_rx));

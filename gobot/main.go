@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -15,11 +16,13 @@ import (
 )
 
 const (
-	streamName  = "banter"
-	consName    = "gobot"
-	goSubject   = "go"
-	rustSubject = "rust"
-	historySize = 50
+	modelName     = "llama2"
+	streamName    = "banter"
+	botName       = "gobot"
+	botSubSubject = "go"
+	botPubName    = "rustbot"
+	botPubSubject = "rust"
+	historySize   = 50
 )
 
 func handleError(ctx context.Context, err error, errCh chan error) {
@@ -31,6 +34,7 @@ func handleError(ctx context.Context, err error, errCh chan error) {
 }
 
 func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
+	log.Println("launched JetStream Writer")
 	defer log.Println("done reading from JetStream")
 	iter, err := cons.Messages()
 	if err != nil {
@@ -41,11 +45,6 @@ func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan 
 		<-ctx.Done()
 		iter.Stop()
 	}()
-	// NOTE: we probably dont need this
-	// if there is an error, we cancel
-	// the context which will unblock the
-	// goroutine just above.
-	defer iter.Stop()
 
 	for {
 		select {
@@ -54,10 +53,16 @@ func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan 
 		default:
 			msg, err := iter.Next()
 			if err != nil {
+				// NOTE: we are handling this error like this
+				// because the only way the iterator is closed
+				// is if we do it when the context is cancelled.
+				if err == jetstream.ErrMsgIteratorClosed {
+					return
+				}
 				handleError(ctx, err, errCh)
 				return
 			}
-			log.Printf("\n[rustbot]: %s", string(msg.Data()))
+			fmt.Printf("\n[%s]: %s", botPubName, string(msg.Data()))
 			if err := msg.Ack(); err != nil {
 				handleError(ctx, err, errCh)
 				return
@@ -72,6 +77,7 @@ func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan 
 }
 
 func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []byte, errCh chan error) {
+	log.Println("launched JetStream Reader")
 	defer log.Println("done writing to JetStream")
 	msg := []byte{}
 	for {
@@ -80,8 +86,8 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 			return
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
-				log.Printf("\n[gobot]: %s", string(msg))
-				_, err := js.Publish(ctx, rustSubject, msg)
+				fmt.Printf("\n[%s]: %s", botName, string(msg))
+				_, err := js.Publish(ctx, botPubSubject, msg)
 				if err != nil {
 					handleError(ctx, err, errCh)
 					return
@@ -98,7 +104,7 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string, chunks chan []byte, errCh chan error) {
 	stream, err := js.CreateStream(ctx, jetstream.StreamConfig{
 		Name:     streamName,
-		Subjects: []string{goSubject, rustSubject},
+		Subjects: []string{botSubSubject, botPubSubject},
 	})
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
@@ -112,23 +118,22 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 			return
 		}
 	}
-	log.Printf("connected to stream: %s", streamName)
 
 	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:       consName,
-		FilterSubject: goSubject,
+		Durable:       botName,
+		FilterSubject: botSubSubject,
 	})
 	if err != nil {
 		handleError(ctx, err, errCh)
 		return
 	}
-	log.Println("created stream consumer")
 
 	go JetStreamWriter(ctx, js, chunks, errCh)
 	go JetStreamReader(ctx, cons, prompts, errCh)
 }
 
 func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks chan []byte, errCh chan error) {
+	log.Println("launched LLM stream")
 	defer log.Println("done streaming LLM")
 	chat := NewHistory(historySize)
 	for {
@@ -157,10 +162,10 @@ func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks
 func main() {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	sigTrap := make(chan os.Signal, 1)
+	signal.Notify(sigTrap, os.Interrupt)
 	defer func() {
-		signal.Stop(c)
+		signal.Stop(sigTrap)
 		cancel()
 	}()
 
@@ -171,23 +176,23 @@ func main() {
 
 	nc, err := nats.Connect(url)
 	if err != nil {
-		log.Fatalf("failed connecting to nats: %v", err)
+		log.Fatalf("failed connecting to NATS: %v", err)
 	}
-	// nolint:errcheck
-	defer nc.Drain()
-
-	log.Println("connecting to NATS")
+	go func() {
+		<-ctx.Done()
+		if err := nc.Drain(); err != nil {
+			log.Printf("error draining NATS: %v", err)
+		}
+	}()
 
 	js, err := jetstream.New(nc)
 	if err != nil {
 		log.Fatalf("failed creating a new stream: %v", err)
 	}
 
-	log.Println("connecting to ollama")
-
-	llm, err := ollama.New(ollama.WithModel("llama2"))
+	llm, err := ollama.New(ollama.WithModel(modelName))
 	if err != nil {
-		log.Fatal("failed creating LLM client: ", err)
+		log.Fatal("failed creating an LLM client: ", err)
 	}
 
 	errCh := make(chan error, 1)
@@ -196,7 +201,7 @@ func main() {
 
 	go func() {
 		select {
-		case <-c:
+		case <-sigTrap:
 			log.Println("stopping: got interrupt")
 		case <-ctx.Done():
 			log.Println("stopping: context cancelled")
@@ -205,11 +210,10 @@ func main() {
 				log.Printf("stopping due to error: %v", err)
 			}
 		}
-		log.Println("cancelling context")
 		cancel()
 	}()
 
-	log.Println("launching workers")
+	log.Printf("launching %s workers", botName)
 
 	go LLMStream(ctx, llm, prompts, chunks, errCh)
 	go JetStream(ctx, js, prompts, chunks, errCh)
