@@ -2,16 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-func LLMStream(ctx context.Context, llm *ollama.LLM, prompts chan string, chunks chan []byte, errCh chan error) {
+func LLMStream(ctx context.Context, llm *ollama.LLM, seedPrompt string, prompts chan string, chunks chan []byte, errCh chan error) {
 	log.Println("launching LLM stream")
 	defer log.Println("done streaming LLM")
 	chat := NewHistory(historySize)
+	chat.Add(seedPrompt)
+
+	fmt.Println("Seed prompt: ", seedPrompt)
+
 	for {
 		select {
 		case <-ctx.Done():

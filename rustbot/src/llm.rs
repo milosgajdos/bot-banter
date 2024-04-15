@@ -11,6 +11,7 @@ use tokio_stream::StreamExt;
 pub struct Config {
     pub hist_size: usize,
     pub model_name: String,
+    pub seed_prompt: Option<String>,
 }
 
 impl Default for Config {
@@ -18,6 +19,7 @@ impl Default for Config {
         Config {
             hist_size: HISTORY_SIZE,
             model_name: MODEL_NAME.to_string(),
+            seed_prompt: None,
         }
     }
 }
@@ -27,6 +29,11 @@ pub async fn stream(mut prompts: Receiver<String>, chunks: Sender<Bytes>, c: Con
     use history::History;
     let ollama = Ollama::default();
     let mut history = History::new(c.hist_size);
+
+    if let Some(seed_prompt) = c.seed_prompt {
+        println!("Seed prompt: {}", seed_prompt);
+        history.add(seed_prompt.to_string());
+    }
 
     while let Some(prompt) = prompts.recv().await {
         history.add(prompt.clone());

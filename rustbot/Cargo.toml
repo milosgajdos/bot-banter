@@ -14,3 +14,4 @@ serde = "1.0.139"
 rand = "0.8"
 ollama-rs = { version = "0.1", features = ["stream"] }
 bytes = { version = "1", features = ["serde"] }
+clap = { version = "4.5.4", features = ["derive"] }

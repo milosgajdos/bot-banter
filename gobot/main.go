@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -20,7 +22,17 @@ const (
 	botPubSubject = "rust"
 )
 
+var (
+	seedPrompt string
+)
+
+func init() {
+	flag.StringVar(&seedPrompt, "seed-prompt", defaultSeedPrompt, "seed prompt")
+}
+
 func main() {
+	flag.Parse()
+
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	sigTrap := make(chan os.Signal, 1)
@@ -65,10 +77,10 @@ func main() {
 
 	log.Printf("launching %s workers", botName)
 
-	go LLMStream(ctx, llm, prompts, chunks, errCh)
+	go LLMStream(ctx, llm, seedPrompt, prompts, chunks, errCh)
 	go JetStream(ctx, jet, prompts, chunks, errCh)
 
-	log.Println("enter your prompt")
+	fmt.Println("\nYour prompt:")
 	reader := bufio.NewReader(os.Stdin)
 	prompt, err := reader.ReadString('\n')
 	if err != nil {
