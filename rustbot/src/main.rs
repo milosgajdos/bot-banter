@@ -21,6 +21,11 @@ struct Args {
     seed_prompt: Option<String>,
     #[arg(long)]
     boot_prompt: Option<String>,
+    #[arg(long, default_value_t = 50)]
+    #[arg(short = 't')]
+    hist_size: usize,
+    #[arg(short, long, default_value = DEFAULT_MODEL_NAME)]
+    model_name: String,
 }
 
 #[tokio::main]
@@ -45,6 +50,8 @@ async fn main() -> Result<()> {
     println!("launching {} workers", BOT_NAME);
 
     let c = llm::Config {
+        hist_size: args.hist_size,
+        model_name: args.model_name,
         seed_prompt: Some(prompt),
         ..llm::Config::default()
     };

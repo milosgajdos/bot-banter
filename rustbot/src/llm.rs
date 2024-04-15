@@ -19,7 +19,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             hist_size: HISTORY_SIZE,
-            model_name: MODEL_NAME.to_string(),
+            model_name: DEFAULT_MODEL_NAME.to_string(),
             seed_prompt: None,
         }
     }
