@@ -8,6 +8,7 @@ use bytes::{Bytes, BytesMut};
 use tokio::{
     self,
     sync::mpsc::{Receiver, Sender},
+    sync::watch,
 };
 use tokio_stream::StreamExt;
 
@@ -74,34 +75,57 @@ pub async fn new(c: Config) -> Result<(Writer, Reader)> {
     ))
 }
 
-pub async fn read(r: Reader, prompts: Sender<String>) -> Result<()> {
+pub async fn read(
+    r: Reader,
+    prompts: Sender<String>,
+    mut done: watch::Receiver<bool>,
+) -> Result<()> {
     println!("launching JetStream Reader");
     let mut messages = r.rx.messages().await?;
-    while let Some(Ok(message)) = messages.next().await {
-        println!("\n[Q]: {:?}", message.payload.to_owned());
-        message.ack().await?;
-        // NOTE: maybe we can send an empty string of the conversion fails?
-        let prompt = String::from_utf8(message.payload.to_vec())?;
-        prompts.send(prompt).await?;
-    }
 
-    Ok(())
+    loop {
+        tokio::select! {
+            _ = done.changed() => {
+                if *done.borrow() {
+                    return Ok(())
+                }
+            },
+            Some(Ok(message)) = messages.next() => {
+                println!("\n[Q]: {:?}", message.payload.to_owned());
+                message.ack().await?;
+                // NOTE: maybe we can send an empty string of the conversion fails?
+                let prompt = String::from_utf8(message.payload.to_vec())?;
+                prompts.send(prompt).await?;
+            }
+        }
+    }
 }
 
-pub async fn write(w: Writer, mut chunks: Receiver<Bytes>) -> Result<()> {
+pub async fn write(
+    w: Writer,
+    mut chunks: Receiver<Bytes>,
+    mut done: watch::Receiver<bool>,
+) -> Result<()> {
     println!("launching JetStream Writer");
     let mut b = BytesMut::new();
-    while let Some(chunk) = chunks.recv().await {
-        if chunk.is_empty() {
-            let msg = String::from_utf8(b.to_vec()).unwrap();
-            println!("\n[A]: {}", msg);
-            w.tx.publish(w.subject.to_string(), b.clone().freeze())
-                .await?;
-            b.clear();
-            continue;
+    loop {
+        tokio::select! {
+            _ = done.changed() => {
+                if *done.borrow() {
+                    return Ok(())
+                }
+            },
+            Some(chunk) = chunks.recv() => {
+                if chunk.is_empty() {
+                    let msg = String::from_utf8(b.to_vec()).unwrap();
+                    println!("\n[A]: {}", msg);
+                    w.tx.publish(w.subject.to_string(), b.clone().freeze())
+                        .await?;
+                    b.clear();
+                    continue;
+                }
+                b.extend_from_slice(&chunk);
+            }
         }
-        b.extend_from_slice(&chunk);
     }
-
-    Ok(())
 }
