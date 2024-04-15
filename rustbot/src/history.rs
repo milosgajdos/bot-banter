@@ -1,39 +1,34 @@
+use std::collections::VecDeque;
 use std::fmt;
 
+#[derive(Clone, Debug)]
 pub struct History {
-    data: Vec<String>,
+    data: VecDeque<String>,
     size: usize,
-    pos: usize,
 }
 
 impl History {
     pub fn new(size: usize) -> Self {
         History {
-            data: vec![String::new(); size],
+            data: VecDeque::with_capacity(size),
             size,
-            pos: 0,
         }
     }
 
     pub fn add(&mut self, element: String) {
-        self.data[self.pos] = element;
-        self.pos = (self.pos + 1) % self.size;
+        if self.data.len() == self.size {
+            self.data.pop_front();
+        }
+        self.data.push_back(element);
     }
 
     pub fn string(&self) -> String {
-        let mut s = String::with_capacity(
-            self.data
-                .iter()
-                .take(self.size)
-                .map(|s| s.len())
-                .sum::<usize>()
-                + self.size,
-        );
-        for i in 0..self.size {
-            s.push_str(&self.data[(self.pos + i) % self.size]);
+        let mut s = String::new();
+        for string in &self.data {
+            s.push_str(string);
             s.push('\n');
         }
-        s.pop();
+        s.pop(); // Remove the last newline character
         s
     }
 }
@@ -41,8 +36,8 @@ impl History {
 impl fmt::Display for History {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result = Vec::with_capacity(self.size);
-        for i in 0..self.size {
-            result.push(&self.data[(self.pos + i) % self.size][..]);
+        for string in &self.data {
+            result.push(string.as_str());
         }
         write!(f, "{}", result.join("\n"))
     }
