@@ -1,4 +1,4 @@
-module github.com/milosgajdos/bot-bante
+module github.com/milosgajdos/bot-banter
 
 go 1.22.0
 

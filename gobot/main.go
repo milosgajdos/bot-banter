@@ -9,8 +9,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/milosgajdos/bot-bante/gobot/jet"
-	"github.com/milosgajdos/bot-bante/gobot/llm"
+	"github.com/milosgajdos/bot-banter/gobot/jet"
+	"github.com/milosgajdos/bot-banter/gobot/llm"
 
 	"github.com/nats-io/nats.go"
 	"golang.org/x/sync/errgroup"
