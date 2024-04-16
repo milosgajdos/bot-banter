@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"nats-jet/gobot/jet"
+	"nats-jet/gobot/llm"
 	"os"
 	"os/signal"
 
@@ -13,21 +15,24 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-const (
-	historySize   = 50
-	modelName     = "llama2"
-	streamName    = "banter"
-	botName       = "gobot"
-	botSubSubject = "go"
-	botPubSubject = "rust"
-)
-
 var (
-	seedPrompt string
+	histSize      uint
+	seedPrompt    string
+	modelName     string
+	streamName    string
+	botName       string
+	botPubSubject string
+	botSubSubject string
 )
 
 func init() {
+	flag.UintVar(&histSize, "hist-size", defaultHistSize, "chat history size")
 	flag.StringVar(&seedPrompt, "seed-prompt", defaultSeedPrompt, "seed prompt")
+	flag.StringVar(&modelName, "model-name", defaultModelName, "LLM model")
+	flag.StringVar(&streamName, "stream-name", defaultStreamName, "jetstream name")
+	flag.StringVar(&botName, "bot-name", defaultBotName, "bot name")
+	flag.StringVar(&botPubSubject, "pub-subject", defaultBotPubSubject, "bot publish subject")
+	flag.StringVar(&botSubSubject, "sub-subject", defaultBotSubSubject, "bot subscribe subject")
 }
 
 func main() {
@@ -47,12 +52,12 @@ func main() {
 		url = nats.DefaultURL
 	}
 
-	jet, err := NewJetStream(url)
+	stream, err := jet.NewStream(url)
 	if err != nil {
 		log.Fatalf("failed creating JetStream: %v", err)
 	}
 
-	llm, err := ollama.New(ollama.WithModel(modelName))
+	ollm, err := ollama.New(ollama.WithModel(modelName))
 	if err != nil {
 		log.Fatal("failed creating an LLM client: ", err)
 	}
@@ -75,10 +80,22 @@ func main() {
 		cancel()
 	}()
 
-	log.Printf("launching %s workers", botName)
+	log.Printf("launching %s workers", defaultBotName)
 
-	go LLMStream(ctx, llm, seedPrompt, prompts, chunks, errCh)
-	go JetStream(ctx, jet, prompts, chunks, errCh)
+	llmConf := llm.Config{
+		ModelName:  modelName,
+		HistSize:   histSize,
+		SeedPrompt: seedPrompt,
+	}
+	go llm.Stream(ctx, ollm, llmConf, prompts, chunks, errCh)
+
+	jetConf := jet.Config{
+		StreamName:  streamName,
+		DurableName: botName,
+		PubSubject:  botPubSubject,
+		SubSubject:  botSubSubject,
+	}
+	go jet.Stream(ctx, stream, jetConf, prompts, chunks, errCh)
 
 	fmt.Println("\nYour prompt:")
 	reader := bufio.NewReader(os.Stdin)

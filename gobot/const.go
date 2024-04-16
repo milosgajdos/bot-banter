@@ -1,6 +1,15 @@
 package main
 
 const (
+	defaultHistSize      = 50
+	defaultModelName     = "llama2"
+	defaultStreamName    = "banter"
+	defaultBotName       = "gobot"
+	defaultBotPubSubject = "rust"
+	defaultBotSubSubject = "go"
+)
+
+const (
 	defaultSeedPrompt = `You are a Go programming language expert and a helpful ` +
 		`AI assistant trying to learn about Rust programming language. You will ` +
 		`answer questions ONLY about Go and ONLY ask questions about Rust. You do ` +

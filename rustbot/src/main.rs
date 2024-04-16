@@ -7,36 +7,27 @@ use tokio::{
     task::JoinHandle,
 };
 
+mod cli;
 mod history;
 mod jetstream;
 mod llm;
 mod prelude;
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(long, default_value = DEFAULT_SYSTEM_PROMPT)]
-    system_prompt: Option<String>,
-    #[arg(long, default_value = DEFAULT_SEED_PROMPT)]
-    seed_prompt: Option<String>,
-    #[arg(long)]
-    boot_prompt: Option<String>,
-    #[arg(long, default_value_t = 50)]
-    #[arg(short = 't')]
-    hist_size: usize,
-    #[arg(short, long, default_value = DEFAULT_MODEL_NAME)]
-    model_name: String,
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = cli::App::parse();
 
-    let system_prompt = args.system_prompt.unwrap();
-    let seed_prompt = args.seed_prompt.unwrap();
+    let system_prompt = args.prompt.system.unwrap();
+    let seed_prompt = args.prompt.seed.unwrap();
     let prompt = system_prompt + "\n" + &seed_prompt;
 
-    let c = jetstream::Config::default();
+    let c = jetstream::Config {
+        durable_name: args.bot.name,
+        stream_name: args.bot.stream_name,
+        pub_subject: args.bot.pub_subject,
+        sub_subject: args.bot.sub_subject,
+        ..jetstream::Config::default()
+    };
     let (stream_tx, stream_rx) = jetstream::new(c).await?;
 
     let (prompts_tx, prompts_rx) = mpsc::channel::<String>(32);
@@ -47,11 +38,11 @@ async fn main() -> Result<()> {
     let jetwr_watch_rx = watch_rx.clone();
     let jetrd_watch_rx = watch_rx.clone();
 
-    println!("launching {} workers", BOT_NAME);
+    println!("launching workers");
 
     let c = llm::Config {
-        hist_size: args.hist_size,
-        model_name: args.model_name,
+        hist_size: args.llm.hist_size,
+        model_name: args.llm.model_name,
         seed_prompt: Some(prompt),
         ..llm::Config::default()
     };

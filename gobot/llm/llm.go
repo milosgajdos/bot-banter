@@ -1,4 +1,4 @@
-package main
+package llm
 
 import (
 	"context"
@@ -9,13 +9,19 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-func LLMStream(ctx context.Context, llm *ollama.LLM, seedPrompt string, prompts chan string, chunks chan []byte, errCh chan error) {
+type Config struct {
+	ModelName  string
+	HistSize   uint
+	SeedPrompt string
+}
+
+func Stream(ctx context.Context, llm *ollama.LLM, c Config, prompts chan string, chunks chan []byte, errCh chan error) {
 	log.Println("launching LLM stream")
 	defer log.Println("done streaming LLM")
-	chat := NewHistory(historySize)
-	chat.Add(seedPrompt)
+	chat := NewHistory(int(c.HistSize))
+	chat.Add(c.SeedPrompt)
 
-	fmt.Println("Seed prompt: ", seedPrompt)
+	fmt.Println("Seed prompt: ", c.SeedPrompt)
 
 	for {
 		select {

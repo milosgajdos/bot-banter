@@ -1,4 +1,4 @@
-package main
+package jet
 
 import (
 	"context"
@@ -10,6 +10,13 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+type Config struct {
+	StreamName  string
+	DurableName string
+	PubSubject  string
+	SubSubject  string
+}
+
 func handleError(ctx context.Context, err error, errCh chan error) {
 	log.Printf("error: %v", err)
 	select {
@@ -18,7 +25,7 @@ func handleError(ctx context.Context, err error, errCh chan error) {
 	}
 }
 
-func NewJetStream(url string) (jetstream.JetStream, error) {
+func NewStream(url string) (jetstream.JetStream, error) {
 	nc, err := nats.Connect(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to NATS: %v", err)
@@ -32,10 +39,10 @@ func NewJetStream(url string) (jetstream.JetStream, error) {
 	return js, nil
 }
 
-func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string, chunks chan []byte, errCh chan error) {
+func Stream(ctx context.Context, js jetstream.JetStream, c Config, prompts chan string, chunks chan []byte, errCh chan error) {
 	stream, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     streamName,
-		Subjects: []string{botSubSubject, botPubSubject},
+		Name:     c.StreamName,
+		Subjects: []string{c.SubSubject, c.PubSubject},
 	})
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
@@ -43,7 +50,7 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 			return
 		}
 		var jsErr error
-		stream, jsErr = js.Stream(ctx, streamName)
+		stream, jsErr = js.Stream(ctx, c.StreamName)
 		if jsErr != nil {
 			handleError(ctx, err, errCh)
 			return
@@ -51,19 +58,19 @@ func JetStream(ctx context.Context, js jetstream.JetStream, prompts chan string,
 	}
 
 	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:       botName,
-		FilterSubject: botSubSubject,
+		Durable:       c.DurableName,
+		FilterSubject: c.SubSubject,
 	})
 	if err != nil {
 		handleError(ctx, err, errCh)
 		return
 	}
 
-	go JetStreamWriter(ctx, js, chunks, errCh)
-	go JetStreamReader(ctx, cons, prompts, errCh)
+	go StreamWriter(ctx, js, c.PubSubject, chunks, errCh)
+	go StreamReader(ctx, cons, prompts, errCh)
 }
 
-func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
+func StreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
 	log.Println("launching JetStream Writer")
 	defer log.Println("done reading from JetStream")
 	iter, err := cons.Messages()
@@ -106,7 +113,7 @@ func JetStreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan 
 	}
 }
 
-func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []byte, errCh chan error) {
+func StreamWriter(ctx context.Context, js jetstream.JetStream, subject string, chunks chan []byte, errCh chan error) {
 	log.Println("launching JetStream Reader")
 	defer log.Println("done writing to JetStream")
 	msg := []byte{}
@@ -117,7 +124,7 @@ func JetStreamWriter(ctx context.Context, js jetstream.JetStream, chunks chan []
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
 				fmt.Printf("\n[A]: %s\n", string(msg))
-				_, err := js.Publish(ctx, botPubSubject, msg)
+				_, err := js.Publish(ctx, subject, msg)
 				if err != nil {
 					handleError(ctx, err, errCh)
 					return
