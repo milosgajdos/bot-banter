@@ -64,7 +64,7 @@ func main() {
 		PubSubject:  pubSubject,
 		SubSubject:  subSubject,
 	}
-	stream, err := jet.NewStream(ctx, jetConf)
+	s, err := jet.NewStream(ctx, jetConf)
 	if err != nil {
 		log.Fatalf("failed creating JetStream: %v", err)
 	}
@@ -74,7 +74,7 @@ func main() {
 		HistSize:   histSize,
 		SeedPrompt: seedPrompt,
 	}
-	model, err := llm.New(llmConf)
+	l, err := llm.New(llmConf)
 	if err != nil {
 		log.Fatal("failed creating an LLM client: ", err)
 	}
@@ -87,20 +87,27 @@ func main() {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return llm.Stream(ctx, model, prompts, chunks)
+		return l.Stream(ctx, prompts, chunks)
 	})
 	g.Go(func() error {
-		return jet.Read(ctx, stream.Reader, prompts)
+		return s.Reader.Read(ctx, prompts)
 	})
 	g.Go(func() error {
-		return jet.Write(ctx, stream.Writer, chunks)
+		return s.Writer.Write(ctx, chunks)
 	})
 
+	var prompt string
 	fmt.Println("\nYour prompt:")
-	reader := bufio.NewReader(os.Stdin)
-	prompt, err := reader.ReadString('\n')
-	if err != nil {
-		log.Fatal("failed reading seed prompt: ", err)
+	for {
+		reader := bufio.NewReader(os.Stdin)
+		prompt, err = reader.ReadString('\n')
+		if err != nil {
+			log.Println("failed reading seed prompt: ", err)
+			continue
+		}
+		if prompt != "" {
+			break
+		}
 	}
 
 	// send the prompt or exit

@@ -21,6 +21,7 @@ async fn main() -> Result<()> {
     let seed_prompt = args.prompt.seed.unwrap();
     let prompt = system_prompt + "\n" + &seed_prompt;
 
+    // NOTE: we could also add Stream::builder to jet module
     let c = jet::Config {
         durable_name: args.bot.name,
         stream_name: args.bot.stream_name,
@@ -28,7 +29,16 @@ async fn main() -> Result<()> {
         sub_subject: args.bot.sub_subject,
         ..jet::Config::default()
     };
-    let (stream_tx, stream_rx) = jet::new(c).await?;
+    let s = jet::Stream::new(c).await?;
+
+    // NOTE: we could also add LLM::builder to llm module
+    let c = llm::Config {
+        hist_size: args.llm.hist_size,
+        model_name: args.llm.model_name,
+        seed_prompt: Some(prompt),
+        ..llm::Config::default()
+    };
+    let l = llm::LLM::new(c);
 
     let (prompts_tx, prompts_rx) = mpsc::channel::<String>(32);
     let (chunks_tx, chunks_rx) = mpsc::channel::<Bytes>(32);
@@ -40,15 +50,9 @@ async fn main() -> Result<()> {
 
     println!("launching workers");
 
-    let c = llm::Config {
-        hist_size: args.llm.hist_size,
-        model_name: args.llm.model_name,
-        seed_prompt: Some(prompt),
-        ..llm::Config::default()
-    };
-    let llm_stream = tokio::spawn(llm::stream(prompts_rx, chunks_tx, watch_rx, c));
-    let jet_write = tokio::spawn(jet::write(stream_tx, chunks_rx, jet_wr_watch_rx));
-    let jet_read = tokio::spawn(jet::read(stream_rx, prompts_tx, jet_rd_watch_rx));
+    let llm_stream = tokio::spawn(l.stream(prompts_rx, chunks_tx, watch_rx));
+    let jet_write = tokio::spawn(s.writer.write(chunks_rx, jet_wr_watch_rx));
+    let jet_read = tokio::spawn(s.reader.read(prompts_tx, jet_rd_watch_rx));
     let sig_handler: JoinHandle<Result<()>> = tokio::spawn(async move {
         tokio::select! {
             _ = signal::ctrl_c() => {

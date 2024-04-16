@@ -33,9 +33,42 @@ impl Default for Config {
     }
 }
 
-pub struct Writer {
-    tx: jetstream::Context,
-    subject: String,
+pub struct Stream {
+    pub writer: Writer,
+    pub reader: Reader,
+}
+
+impl Stream {
+    pub async fn new(c: Config) -> Result<Self> {
+        let client = async_nats::connect(c.nats_url).await?;
+        let js = jetstream::new(client);
+
+        let stream = js
+            .get_or_create_stream(stream::Config {
+                name: c.stream_name,
+                ..Default::default()
+            })
+            .await?;
+
+        let cons = stream
+            .create_consumer(pull::Config {
+                durable_name: Some(c.durable_name.clone()),
+                filter_subject: c.sub_subject.clone(),
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(Stream {
+            writer: Writer {
+                tx: js,
+                subject: c.pub_subject.clone(),
+            },
+            reader: Reader {
+                rx: cons,
+                subject: c.sub_subject.clone(),
+            },
+        })
+    }
 }
 
 #[allow(unused)]
@@ -44,87 +77,65 @@ pub struct Reader {
     subject: String,
 }
 
-pub async fn new(c: Config) -> Result<(Writer, Reader)> {
-    let client = async_nats::connect(c.nats_url).await?;
-    let js = jetstream::new(client);
+impl Reader {
+    pub async fn read(
+        self,
+        prompts: Sender<String>,
+        mut done: watch::Receiver<bool>,
+    ) -> Result<()> {
+        println!("launching JetStream Reader");
+        let mut messages = self.rx.messages().await?;
 
-    let stream = js
-        .get_or_create_stream(stream::Config {
-            name: c.stream_name,
-            ..Default::default()
-        })
-        .await?;
-
-    let cons = stream
-        .create_consumer(pull::Config {
-            durable_name: Some(c.durable_name.clone()),
-            filter_subject: c.sub_subject.clone(),
-            ..Default::default()
-        })
-        .await?;
-
-    Ok((
-        Writer {
-            tx: js,
-            subject: c.pub_subject.clone(),
-        },
-        Reader {
-            rx: cons,
-            subject: c.sub_subject.clone(),
-        },
-    ))
-}
-
-pub async fn read(
-    r: Reader,
-    prompts: Sender<String>,
-    mut done: watch::Receiver<bool>,
-) -> Result<()> {
-    println!("launching JetStream Reader");
-    let mut messages = r.rx.messages().await?;
-
-    loop {
-        tokio::select! {
-            _ = done.changed() => {
-                if *done.borrow() {
-                    return Ok(())
+        loop {
+            tokio::select! {
+                _ = done.changed() => {
+                    if *done.borrow() {
+                        return Ok(())
+                    }
+                },
+                Some(Ok(message)) = messages.next() => {
+                    println!("\n[Q]: {:?}", message.payload.to_owned());
+                    message.ack().await?;
+                    // NOTE: maybe we can send an empty string of the conversion fails?
+                    let prompt = String::from_utf8(message.payload.to_vec())?;
+                    prompts.send(prompt).await?;
                 }
-            },
-            Some(Ok(message)) = messages.next() => {
-                println!("\n[Q]: {:?}", message.payload.to_owned());
-                message.ack().await?;
-                // NOTE: maybe we can send an empty string of the conversion fails?
-                let prompt = String::from_utf8(message.payload.to_vec())?;
-                prompts.send(prompt).await?;
             }
         }
     }
 }
 
-pub async fn write(
-    w: Writer,
-    mut chunks: Receiver<Bytes>,
-    mut done: watch::Receiver<bool>,
-) -> Result<()> {
-    println!("launching JetStream Writer");
-    let mut b = BytesMut::new();
-    loop {
-        tokio::select! {
-            _ = done.changed() => {
-                if *done.borrow() {
-                    return Ok(())
+pub struct Writer {
+    tx: jetstream::Context,
+    subject: String,
+}
+
+impl Writer {
+    pub async fn write(
+        self,
+        mut chunks: Receiver<Bytes>,
+        mut done: watch::Receiver<bool>,
+    ) -> Result<()> {
+        println!("launching JetStream Writer");
+        let mut b = BytesMut::new();
+        loop {
+            tokio::select! {
+                _ = done.changed() => {
+                    if *done.borrow() {
+                        return Ok(())
+                    }
+                },
+                Some(chunk) = chunks.recv() => {
+                    if chunk.is_empty() {
+                        let msg = String::from_utf8(b.to_vec()).unwrap();
+                        println!("\n[A]: {}", msg);
+                        self.tx.publish(self.subject.to_string(), b.clone().freeze())
+                            .await?;
+                        b.clear();
+                        continue;
+                    }
+                    b.extend_from_slice(&chunk);
                 }
-            },
-            Some(chunk) = chunks.recv() => {
-                if chunk.is_empty() {
-                    let msg = String::from_utf8(b.to_vec()).unwrap();
-                    println!("\n[A]: {}", msg);
-                    w.tx.publish(w.subject.to_string(), b.clone().freeze())
-                        .await?;
-                    b.clear();
-                    continue;
-                }
-                b.extend_from_slice(&chunk);
             }
         }
     }

@@ -25,45 +25,63 @@ impl Default for Config {
     }
 }
 
-pub async fn stream(
-    mut prompts: Receiver<String>,
-    chunks: Sender<Bytes>,
-    mut done: watch::Receiver<bool>,
-    c: Config,
-) -> Result<()> {
-    println!("launching LLM stream");
-    use history::History;
-    let ollama = Ollama::default();
-    let mut history = History::new(c.hist_size);
+pub struct LLM {
+    client: Ollama,
+    model_name: String,
+    hist_size: usize,
+    seed_prompt: Option<String>,
+}
 
-    if let Some(seed_prompt) = c.seed_prompt {
-        println!("Seed prompt: {}", seed_prompt);
-        history.add(seed_prompt.to_string());
+impl LLM {
+    pub fn new(c: Config) -> Self {
+        let ollama = Ollama::default();
+        LLM {
+            client: ollama,
+            model_name: c.model_name,
+            hist_size: c.hist_size,
+            seed_prompt: c.seed_prompt,
+        }
     }
 
-    loop {
-        tokio::select! {
-            _ = done.changed() => {
-                if *done.borrow() {
-                    return Ok(())
-                }
-            },
-            Some(prompt) = prompts.recv() => {
-                history.add(prompt.clone());
-                let mut stream = ollama
-                    .generate_stream(GenerationRequest::new(
-                        c.model_name.clone(),
-                        history.string(),
-                    ))
-                    .await?;
+    pub async fn stream(
+        self,
+        mut prompts: Receiver<String>,
+        chunks: Sender<Bytes>,
+        mut done: watch::Receiver<bool>,
+    ) -> Result<()> {
+        println!("launching LLM stream");
+        use history::History;
+        let mut history = History::new(self.hist_size);
 
-                while let Some(res) = stream.next().await {
-                    let responses = res?;
-                    for resp in responses {
-                        chunks.send(Bytes::from(resp.response)).await?;
+        if let Some(seed_prompt) = self.seed_prompt {
+            println!("Seed prompt: {}", seed_prompt);
+            history.add(seed_prompt.to_string());
+        }
+
+        loop {
+            tokio::select! {
+                _ = done.changed() => {
+                    if *done.borrow() {
+                        return Ok(())
                     }
-                }
-            },
+                },
+                Some(prompt) = prompts.recv() => {
+                    history.add(prompt.clone());
+                    let mut stream = self.client
+                        .generate_stream(GenerationRequest::new(
+                            self.model_name.clone(),
+                            history.string(),
+                        ))
+                        .await?;
+
+                    while let Some(res) = stream.next().await {
+                        let responses = res?;
+                        for resp in responses {
+                            chunks.send(Bytes::from(resp.response)).await?;
+                        }
+                    }
+                },
+            }
         }
     }
 }
