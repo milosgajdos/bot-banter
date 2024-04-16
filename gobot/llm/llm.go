@@ -33,13 +33,13 @@ func New(c Config) (*LLM, error) {
 	}, nil
 }
 
-func Stream(ctx context.Context, llm *LLM, prompts chan string, chunks chan []byte) error {
+func (l *LLM) Stream(ctx context.Context, prompts chan string, chunks chan []byte) error {
 	log.Println("launching LLM stream")
 	defer log.Println("done streaming LLM")
-	chat := NewHistory(int(llm.histSize))
-	chat.Add(llm.seedPrompt)
+	chat := NewHistory(int(l.histSize))
+	chat.Add(l.seedPrompt)
 
-	fmt.Println("Seed prompt: ", llm.seedPrompt)
+	fmt.Println("Seed prompt: ", l.seedPrompt)
 
 	for {
 		select {
@@ -47,7 +47,7 @@ func Stream(ctx context.Context, llm *LLM, prompts chan string, chunks chan []by
 			return ctx.Err()
 		case prompt := <-prompts:
 			chat.Add(prompt)
-			_, err := llms.GenerateFromSinglePrompt(ctx, llm.model, chat.String(),
+			_, err := llms.GenerateFromSinglePrompt(ctx, l.model, chat.String(),
 				llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
 					select {
 					case <-ctx.Done():

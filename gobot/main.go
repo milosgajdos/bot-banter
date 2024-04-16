@@ -57,6 +57,8 @@ func main() {
 		url = nats.DefaultURL
 	}
 
+	// NOTE: we could also provide functional options
+	// instead of passing it Config.
 	jetConf := jet.Config{
 		StreamURL:   url,
 		StreamName:  streamName,
@@ -64,17 +66,19 @@ func main() {
 		PubSubject:  pubSubject,
 		SubSubject:  subSubject,
 	}
-	stream, err := jet.NewStream(ctx, jetConf)
+	s, err := jet.NewStream(ctx, jetConf)
 	if err != nil {
 		log.Fatalf("failed creating JetStream: %v", err)
 	}
 
+	// NOTE: we could also provide functional options
+	// instead of passing it Config.
 	llmConf := llm.Config{
 		ModelName:  modelName,
 		HistSize:   histSize,
 		SeedPrompt: seedPrompt,
 	}
-	model, err := llm.New(llmConf)
+	l, err := llm.New(llmConf)
 	if err != nil {
 		log.Fatal("failed creating an LLM client: ", err)
 	}
@@ -82,25 +86,32 @@ func main() {
 	chunks := make(chan []byte)
 	prompts := make(chan string)
 
-	log.Println("launching workers")
-
 	g, ctx := errgroup.WithContext(ctx)
 
+	log.Println("launching workers")
+
 	g.Go(func() error {
-		return llm.Stream(ctx, model, prompts, chunks)
+		return l.Stream(ctx, prompts, chunks)
 	})
 	g.Go(func() error {
-		return jet.Read(ctx, stream.Reader, prompts)
+		return s.Reader.Read(ctx, prompts)
 	})
 	g.Go(func() error {
-		return jet.Write(ctx, stream.Writer, chunks)
+		return s.Writer.Write(ctx, chunks)
 	})
 
-	fmt.Println("\nYour prompt:")
-	reader := bufio.NewReader(os.Stdin)
-	prompt, err := reader.ReadString('\n')
-	if err != nil {
-		log.Fatal("failed reading seed prompt: ", err)
+	var prompt string
+	for {
+		fmt.Println("Your prompt:")
+		reader := bufio.NewReader(os.Stdin)
+		prompt, err = reader.ReadString('\n')
+		if err != nil {
+			log.Println("failed reading prompt: ", err)
+			continue
+		}
+		if prompt != "" {
+			break
+		}
 	}
 
 	// send the prompt or exit
