@@ -12,7 +12,7 @@ import (
 	"os/signal"
 
 	"github.com/nats-io/nats.go"
-	"github.com/tmc/langchaingo/llms/ollama"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -46,56 +46,55 @@ func main() {
 		signal.Stop(sigTrap)
 		cancel()
 	}()
+	go func() {
+		<-sigTrap
+		log.Println("shutting down: received SIGINT...")
+		cancel()
+	}()
 
 	url := os.Getenv("NATS_URL")
 	if url == "" {
 		url = nats.DefaultURL
 	}
 
-	stream, err := jet.NewStream(url)
+	jetConf := jet.Config{
+		StreamURL:   url,
+		StreamName:  streamName,
+		DurableName: botName,
+		PubSubject:  pubSubject,
+		SubSubject:  subSubject,
+	}
+	stream, err := jet.NewStream(ctx, jetConf)
 	if err != nil {
 		log.Fatalf("failed creating JetStream: %v", err)
 	}
-
-	ollm, err := ollama.New(ollama.WithModel(modelName))
-	if err != nil {
-		log.Fatal("failed creating an LLM client: ", err)
-	}
-
-	errCh := make(chan error, 1)
-	chunks := make(chan []byte)
-	prompts := make(chan string)
-
-	go func() {
-		select {
-		case <-sigTrap:
-			log.Println("shutting down: received SIGINT...")
-		case <-ctx.Done():
-			log.Println("shutting down: context cancelled")
-		case err := <-errCh:
-			if err != nil {
-				log.Printf("shutting down, encountered error: %v", err)
-			}
-		}
-		cancel()
-	}()
-
-	log.Println("launching workers")
 
 	llmConf := llm.Config{
 		ModelName:  modelName,
 		HistSize:   histSize,
 		SeedPrompt: seedPrompt,
 	}
-	go llm.Stream(ctx, ollm, llmConf, prompts, chunks, errCh)
-
-	jetConf := jet.Config{
-		StreamName:  streamName,
-		DurableName: botName,
-		PubSubject:  pubSubject,
-		SubSubject:  subSubject,
+	model, err := llm.New(llmConf)
+	if err != nil {
+		log.Fatal("failed creating an LLM client: ", err)
 	}
-	go jet.Stream(ctx, stream, jetConf, prompts, chunks, errCh)
+
+	chunks := make(chan []byte)
+	prompts := make(chan string)
+
+	log.Println("launching workers")
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return llm.Stream(ctx, model, prompts, chunks)
+	})
+	g.Go(func() error {
+		return jet.Read(ctx, stream.Reader, prompts)
+	})
+	g.Go(func() error {
+		return jet.Write(ctx, stream.Writer, chunks)
+	})
 
 	fmt.Println("\nYour prompt:")
 	reader := bufio.NewReader(os.Stdin)
@@ -110,5 +109,9 @@ func main() {
 	case <-ctx.Done():
 	}
 
-	<-ctx.Done()
+	if err := g.Wait(); err != nil {
+		if err != context.Canceled {
+			log.Fatalf("encountered error: %v", err)
+		}
+	}
 }

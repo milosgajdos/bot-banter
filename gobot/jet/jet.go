@@ -11,22 +11,30 @@ import (
 )
 
 type Config struct {
+	StreamURL   string
 	StreamName  string
 	DurableName string
 	PubSubject  string
 	SubSubject  string
 }
 
-func handleError(ctx context.Context, err error, errCh chan error) {
-	log.Printf("error: %v", err)
-	select {
-	case <-ctx.Done():
-	case errCh <- err:
-	}
+type Writer struct {
+	js      jetstream.JetStream
+	subject string
 }
 
-func NewStream(url string) (jetstream.JetStream, error) {
-	nc, err := nats.Connect(url)
+type Reader struct {
+	cons    jetstream.Consumer
+	subject string
+}
+
+type Stream struct {
+	Writer Writer
+	Reader Reader
+}
+
+func NewStream(ctx context.Context, c Config) (*Stream, error) {
+	nc, err := nats.Connect(c.StreamURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to NATS: %v", err)
 	}
@@ -36,24 +44,18 @@ func NewStream(url string) (jetstream.JetStream, error) {
 		return nil, fmt.Errorf("failed creating a new stream: %v", err)
 	}
 
-	return js, nil
-}
-
-func Stream(ctx context.Context, js jetstream.JetStream, c Config, prompts chan string, chunks chan []byte, errCh chan error) {
 	stream, err := js.CreateStream(ctx, jetstream.StreamConfig{
 		Name:     c.StreamName,
 		Subjects: []string{c.SubSubject, c.PubSubject},
 	})
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
-			handleError(ctx, err, errCh)
-			return
+			return nil, err
 		}
 		var jsErr error
 		stream, jsErr = js.Stream(ctx, c.StreamName)
 		if jsErr != nil {
-			handleError(ctx, err, errCh)
-			return
+			return nil, err
 		}
 	}
 
@@ -62,21 +64,27 @@ func Stream(ctx context.Context, js jetstream.JetStream, c Config, prompts chan 
 		FilterSubject: c.SubSubject,
 	})
 	if err != nil {
-		handleError(ctx, err, errCh)
-		return
+		return nil, err
 	}
 
-	go write(ctx, js, c.PubSubject, chunks, errCh)
-	go read(ctx, cons, prompts, errCh)
+	return &Stream{
+		Writer: Writer{
+			js:      js,
+			subject: c.PubSubject,
+		},
+		Reader: Reader{
+			cons:    cons,
+			subject: c.SubSubject,
+		},
+	}, nil
 }
 
-func read(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
+func Read(ctx context.Context, r Reader, prompts chan string) error {
 	log.Println("launching JetStream Writer")
 	defer log.Println("done reading from JetStream")
-	iter, err := cons.Messages()
+	iter, err := r.cons.Messages()
 	if err != nil {
-		handleError(ctx, err, errCh)
-		return
+		return err
 	}
 	go func() {
 		<-ctx.Done()
@@ -86,7 +94,7 @@ func read(ctx context.Context, cons jetstream.Consumer, prompts chan string, err
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		default:
 			msg, err := iter.Next()
 			if err != nil {
@@ -94,40 +102,37 @@ func read(ctx context.Context, cons jetstream.Consumer, prompts chan string, err
 				// because the only way the iterator is closed
 				// is if we do it when the context is cancelled.
 				if err == jetstream.ErrMsgIteratorClosed {
-					return
+					return nil
 				}
-				handleError(ctx, err, errCh)
-				return
+				return err
 			}
 			fmt.Printf("\n[Q]: %s\n", string(msg.Data()))
 			if err := msg.Ack(); err != nil {
-				handleError(ctx, err, errCh)
-				return
+				return err
 			}
 			select {
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			case prompts <- string(msg.Data()):
 			}
 		}
 	}
 }
 
-func write(ctx context.Context, js jetstream.JetStream, subject string, chunks chan []byte, errCh chan error) {
+func Write(ctx context.Context, w Writer, chunks chan []byte) error {
 	log.Println("launching JetStream Reader")
 	defer log.Println("done writing to JetStream")
 	msg := []byte{}
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
 				fmt.Printf("\n[A]: %s\n", string(msg))
-				_, err := js.Publish(ctx, subject, msg)
+				_, err := w.js.Publish(ctx, w.subject, msg)
 				if err != nil {
-					handleError(ctx, err, errCh)
-					return
+					return err
 				}
 				// reset the msg slice instead of reallocating
 				msg = msg[:0]

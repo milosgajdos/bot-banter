@@ -7,6 +7,7 @@ toolchain go1.22.2
 require (
 	github.com/nats-io/nats.go v1.34.1
 	github.com/tmc/langchaingo v0.1.8
+	golang.org/x/sync v0.7.0
 )
 
 require (
