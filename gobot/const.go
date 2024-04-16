@@ -1,12 +1,12 @@
 package main
 
 const (
-	defaultHistSize      = 50
-	defaultModelName     = "llama2"
-	defaultStreamName    = "banter"
-	defaultBotName       = "gobot"
-	defaultBotPubSubject = "rust"
-	defaultBotSubSubject = "go"
+	defaultHistSize   = 50
+	defaultModelName  = "llama2"
+	defaultStreamName = "banter"
+	defaultBotName    = "gobot"
+	defaultPubSubject = "rust"
+	defaultSubSubject = "go"
 )
 
 const (

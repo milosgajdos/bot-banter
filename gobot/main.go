@@ -16,13 +16,13 @@ import (
 )
 
 var (
-	histSize      uint
-	seedPrompt    string
-	modelName     string
-	streamName    string
-	botName       string
-	botPubSubject string
-	botSubSubject string
+	histSize   uint
+	seedPrompt string
+	modelName  string
+	streamName string
+	botName    string
+	pubSubject string
+	subSubject string
 )
 
 func init() {
@@ -31,8 +31,8 @@ func init() {
 	flag.StringVar(&modelName, "model-name", defaultModelName, "LLM model")
 	flag.StringVar(&streamName, "stream-name", defaultStreamName, "jetstream name")
 	flag.StringVar(&botName, "bot-name", defaultBotName, "bot name")
-	flag.StringVar(&botPubSubject, "pub-subject", defaultBotPubSubject, "bot publish subject")
-	flag.StringVar(&botSubSubject, "sub-subject", defaultBotSubSubject, "bot subscribe subject")
+	flag.StringVar(&pubSubject, "pub-subject", defaultPubSubject, "bot publish subject")
+	flag.StringVar(&subSubject, "sub-subject", defaultSubSubject, "bot subscribe subject")
 }
 
 func main() {
@@ -80,7 +80,7 @@ func main() {
 		cancel()
 	}()
 
-	log.Printf("launching %s workers", defaultBotName)
+	log.Println("launching workers")
 
 	llmConf := llm.Config{
 		ModelName:  modelName,
@@ -92,8 +92,8 @@ func main() {
 	jetConf := jet.Config{
 		StreamName:  streamName,
 		DurableName: botName,
-		PubSubject:  botPubSubject,
-		SubSubject:  botSubSubject,
+		PubSubject:  pubSubject,
+		SubSubject:  subSubject,
 	}
 	go jet.Stream(ctx, stream, jetConf, prompts, chunks, errCh)
 

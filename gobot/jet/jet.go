@@ -66,11 +66,11 @@ func Stream(ctx context.Context, js jetstream.JetStream, c Config, prompts chan 
 		return
 	}
 
-	go StreamWriter(ctx, js, c.PubSubject, chunks, errCh)
-	go StreamReader(ctx, cons, prompts, errCh)
+	go write(ctx, js, c.PubSubject, chunks, errCh)
+	go read(ctx, cons, prompts, errCh)
 }
 
-func StreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
+func read(ctx context.Context, cons jetstream.Consumer, prompts chan string, errCh chan error) {
 	log.Println("launching JetStream Writer")
 	defer log.Println("done reading from JetStream")
 	iter, err := cons.Messages()
@@ -113,7 +113,7 @@ func StreamReader(ctx context.Context, cons jetstream.Consumer, prompts chan str
 	}
 }
 
-func StreamWriter(ctx context.Context, js jetstream.JetStream, subject string, chunks chan []byte, errCh chan error) {
+func write(ctx context.Context, js jetstream.JetStream, subject string, chunks chan []byte, errCh chan error) {
 	log.Println("launching JetStream Reader")
 	defer log.Println("done writing to JetStream")
 	msg := []byte{}

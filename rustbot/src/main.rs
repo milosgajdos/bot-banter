@@ -9,7 +9,7 @@ use tokio::{
 
 mod cli;
 mod history;
-mod jetstream;
+mod jet;
 mod llm;
 mod prelude;
 
@@ -21,22 +21,22 @@ async fn main() -> Result<()> {
     let seed_prompt = args.prompt.seed.unwrap();
     let prompt = system_prompt + "\n" + &seed_prompt;
 
-    let c = jetstream::Config {
+    let c = jet::Config {
         durable_name: args.bot.name,
         stream_name: args.bot.stream_name,
         pub_subject: args.bot.pub_subject,
         sub_subject: args.bot.sub_subject,
-        ..jetstream::Config::default()
+        ..jet::Config::default()
     };
-    let (stream_tx, stream_rx) = jetstream::new(c).await?;
+    let (stream_tx, stream_rx) = jet::new(c).await?;
 
     let (prompts_tx, prompts_rx) = mpsc::channel::<String>(32);
     let (chunks_tx, chunks_rx) = mpsc::channel::<Bytes>(32);
 
     // NOTE: used for cancellation
     let (watch_tx, watch_rx) = watch::channel(false);
-    let jetwr_watch_rx = watch_rx.clone();
-    let jetrd_watch_rx = watch_rx.clone();
+    let jet_wr_watch_rx = watch_rx.clone();
+    let jet_rd_watch_rx = watch_rx.clone();
 
     println!("launching workers");
 
@@ -47,8 +47,8 @@ async fn main() -> Result<()> {
         ..llm::Config::default()
     };
     let llm_stream = tokio::spawn(llm::stream(prompts_rx, chunks_tx, watch_rx, c));
-    let jet_write = tokio::spawn(jetstream::write(stream_tx, chunks_rx, jetwr_watch_rx));
-    let jet_read = tokio::spawn(jetstream::read(stream_rx, prompts_tx, jetrd_watch_rx));
+    let jet_write = tokio::spawn(jet::write(stream_tx, chunks_rx, jet_wr_watch_rx));
+    let jet_read = tokio::spawn(jet::read(stream_rx, prompts_tx, jet_rd_watch_rx));
     let sig_handler: JoinHandle<Result<()>> = tokio::spawn(async move {
         tokio::select! {
             _ = signal::ctrl_c() => {
@@ -59,7 +59,12 @@ async fn main() -> Result<()> {
         Ok(())
     });
 
-    let _ = tokio::try_join!(llm_stream, jet_write, jet_read)?;
+    match tokio::try_join!(llm_stream, jet_write, jet_read) {
+        Ok(_) => {}
+        Err(e) => {
+            println!("Error running bot: {}", e);
+        }
+    }
     sig_handler.abort();
     Ok(())
 }
