@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
     let prompt = system_prompt + "\n" + &seed_prompt;
 
     // NOTE: we could also add Stream::builder to jet module
+    // and instead of passing config we could build it by chaining methods.
     let c = jet::Config {
         durable_name: args.bot.name,
         stream_name: args.bot.stream_name,
@@ -32,6 +33,7 @@ async fn main() -> Result<()> {
     let s = jet::Stream::new(c).await?;
 
     // NOTE: we could also add LLM::builder to llm module
+    // and instead of passing config we could build it by chaining methods.
     let c = llm::Config {
         hist_size: args.llm.hist_size,
         model_name: args.llm.model_name,
@@ -43,7 +45,7 @@ async fn main() -> Result<()> {
     let (prompts_tx, prompts_rx) = mpsc::channel::<String>(32);
     let (chunks_tx, chunks_rx) = mpsc::channel::<Bytes>(32);
 
-    // NOTE: used for cancellation
+    // NOTE: used for cancellation when SIGINT is trapped.
     let (watch_tx, watch_rx) = watch::channel(false);
     let jet_wr_watch_rx = watch_rx.clone();
     let jet_rd_watch_rx = watch_rx.clone();

@@ -57,6 +57,8 @@ func main() {
 		url = nats.DefaultURL
 	}
 
+	// NOTE: we could also provide functional options
+	// instead of passing it Config.
 	jetConf := jet.Config{
 		StreamURL:   url,
 		StreamName:  streamName,
@@ -69,6 +71,8 @@ func main() {
 		log.Fatalf("failed creating JetStream: %v", err)
 	}
 
+	// NOTE: we could also provide functional options
+	// instead of passing it Config.
 	llmConf := llm.Config{
 		ModelName:  modelName,
 		HistSize:   histSize,
@@ -82,9 +86,9 @@ func main() {
 	chunks := make(chan []byte)
 	prompts := make(chan string)
 
-	log.Println("launching workers")
-
 	g, ctx := errgroup.WithContext(ctx)
+
+	log.Println("launching workers")
 
 	g.Go(func() error {
 		return l.Stream(ctx, prompts, chunks)
@@ -97,12 +101,12 @@ func main() {
 	})
 
 	var prompt string
-	fmt.Println("\nYour prompt:")
 	for {
+		fmt.Println("Your prompt:")
 		reader := bufio.NewReader(os.Stdin)
 		prompt, err = reader.ReadString('\n')
 		if err != nil {
-			log.Println("failed reading seed prompt: ", err)
+			log.Println("failed reading prompt: ", err)
 			continue
 		}
 		if prompt != "" {
