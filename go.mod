@@ -1,4 +1,4 @@
-module nats-jet
+module github.com/milosgajdos/bot-bante
 
 go 1.22.0
 

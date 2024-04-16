@@ -6,10 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"nats-jet/gobot/jet"
-	"nats-jet/gobot/llm"
 	"os"
 	"os/signal"
+
+	"github.com/milosgajdos/bot-bante/gobot/jet"
+	"github.com/milosgajdos/bot-bante/gobot/llm"
 
 	"github.com/nats-io/nats.go"
 	"golang.org/x/sync/errgroup"
