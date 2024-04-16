@@ -22,3 +22,7 @@ Assistant: One of the biggest strengths of Go is its concise syntax and simple g
 		`which makes it easy to write code quickly. Can you tell me what are some of the biggest` +
 		`strengths of Rust that make it stand out from other programming languages?`
 )
+
+const (
+	defaultVoiceID = "s3://mockingbird-prod/abigail_vo_6661b91f-4012-44e3-ad12-589fbdee9948/voices/speaker/manifest.json"
+)
