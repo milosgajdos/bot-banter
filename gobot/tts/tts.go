@@ -79,7 +79,7 @@ func (t *TTS) Stream(ctx context.Context, pw *io.PipeWriter, chunks <-chan []byt
 				chunkBuf.Reset()
 				continue
 			}
-			_, err := chunkBuf.Write(chunk)
+			n, err := chunkBuf.Write(chunk)
 			if err != nil {
 				if err == ErrBufferFull {
 					req.Text = chunkBuf.String()
@@ -88,6 +88,9 @@ func (t *TTS) Stream(ctx context.Context, pw *io.PipeWriter, chunks <-chan []byt
 						return err
 					}
 					chunkBuf.Reset()
+					if _, err := chunkBuf.Write(chunk[n:]); err != nil {
+						return err
+					}
 					continue
 				}
 				return err
