@@ -93,6 +93,11 @@ jobs:
       CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
     steps:
+      - name: Update apt
+        run: sudo apt update
+      - name: Install alsa
+        run: sudo apt install -y --no-install-recommends libasound2-dev pkg-config
+
       - name: check out code
         uses: actions/checkout@v4
 

@@ -15,3 +15,5 @@ rand = "0.8"
 ollama-rs = { version = "0.1", features = ["stream"] }
 bytes = { version = "1", features = ["serde"] }
 clap = { version = "4.5.4", features = ["derive"] }
+playht_rs = "0.2.0"
+rodio = "0.17.3"

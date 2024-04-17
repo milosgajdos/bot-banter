@@ -5,6 +5,7 @@ use tokio::{
     self,
     sync::mpsc::{Receiver, Sender},
     sync::watch,
+    task::JoinHandle,
 };
 use tokio_stream::StreamExt;
 
@@ -46,7 +47,8 @@ impl LLM {
     pub async fn stream(
         self,
         mut prompts: Receiver<String>,
-        chunks: Sender<Bytes>,
+        jet_chunks: Sender<Bytes>,
+        tts_chunks: Sender<Bytes>,
         mut done: watch::Receiver<bool>,
     ) -> Result<()> {
         println!("launching LLM stream");
@@ -77,7 +79,25 @@ impl LLM {
                     while let Some(res) = stream.next().await {
                         let responses = res?;
                         for resp in responses {
-                            chunks.send(Bytes::from(resp.response)).await?;
+                            let resp_bytes = Bytes::from(resp.response);
+                            let jet_bytes = resp_bytes.clone();
+                            let jet_ch = jet_chunks.clone();
+                            let jet_task: JoinHandle<Result<()>> = tokio::spawn(async move {
+                               jet_ch.send(Bytes::from(jet_bytes)).await?;
+                               Ok(())
+                            });
+                            let tts_bytes = resp_bytes.clone();
+                            let tts_ch = tts_chunks.clone();
+                            let tts_task: JoinHandle<Result<()>> = tokio::spawn(async move {
+                                tts_ch.send(Bytes::from(tts_bytes)).await?;
+                                Ok(())
+                            });
+                            match tokio::try_join!(jet_task, tts_task) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    return Err(Box::new(e));
+                                }
+                            }
                         }
                     }
                 },

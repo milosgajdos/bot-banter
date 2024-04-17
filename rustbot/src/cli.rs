@@ -10,6 +10,8 @@ pub struct App {
     pub llm: LLM,
     #[command(flatten)]
     pub bot: Bot,
+    #[command(flatten)]
+    pub tts: TTS,
 }
 
 #[derive(Args, Debug)]
@@ -39,4 +41,10 @@ pub struct Bot {
     pub pub_subject: String,
     #[arg(short = 'b', long, default_value = BOT_SUB_SUBJECT, help = "jetstream subscribe subject")]
     pub sub_subject: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TTS {
+    #[arg(short, default_value = DEFAULT_VOICE_ID, help = "bot name")]
+    pub voice_id: String,
 }
