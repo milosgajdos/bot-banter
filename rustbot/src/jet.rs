@@ -114,6 +114,7 @@ impl Writer {
     pub async fn write(
         self,
         mut chunks: Receiver<Bytes>,
+        mut tts_done: watch::Receiver<bool>,
         mut done: watch::Receiver<bool>,
     ) -> Result<()> {
         println!("launching JetStream Writer");
@@ -129,10 +130,18 @@ impl Writer {
                     if chunk.is_empty() {
                         let msg = String::from_utf8(b.to_vec()).unwrap();
                         println!("\n[A]: {}", msg);
-                        self.tx.publish(self.subject.to_string(), b.clone().freeze())
-                            .await?;
-                        b.clear();
-                        continue;
+                        loop {
+                            tokio::select! {
+                                _ = tts_done.changed() => {
+                                    if *tts_done.borrow() {
+                                        self.tx.publish(self.subject.to_string(), b.clone().freeze())
+                                            .await?;
+                                        b.clear();
+                                        break;
+                                    }
+                                },
+                            }
+                        }
                     }
                     b.extend_from_slice(&chunk);
                 }

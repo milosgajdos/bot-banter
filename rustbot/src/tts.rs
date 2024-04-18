@@ -39,8 +39,9 @@ impl TTS {
 
     pub async fn stream<W>(
         self,
-        w: &mut W,
+        mut w: W,
         mut chunks: Receiver<Bytes>,
+        tts_done: watch::Sender<bool>,
         mut done: watch::Receiver<bool>,
     ) -> Result<()>
     where
@@ -67,8 +68,9 @@ impl TTS {
                     if chunk.is_empty() {
                         let text = String::from_utf8(buf.as_bytes().to_vec())?;
                         req.text = Some(text);
-                        self.client.write_audio_stream(w, &req).await?;
+                        self.client.write_audio_stream(&mut w, &req).await?;
                         buf.reset();
+                        tts_done.send(true)?;
                         continue
                     }
                     match buf.write(chunk.as_ref()) {
@@ -76,8 +78,9 @@ impl TTS {
                         Err(e) => {
                             let text = String::from_utf8(buf.as_bytes().to_vec())?;
                             req.text = Some(text);
-                            self.client.write_audio_stream(w, &req).await?;
+                            self.client.write_audio_stream(&mut w, &req).await?;
                             buf.reset();
+                            tts_done.send(true)?;
                             let rem = chunk.len() - e.bytes_written;
                             let chunk_slice = chunk.as_ref();
                             buf.write(&chunk_slice[rem..])?;
