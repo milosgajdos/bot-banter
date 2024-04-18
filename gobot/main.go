@@ -110,13 +110,15 @@ func main() {
 	// chunk for JetStream
 	jetChunks := make(chan []byte, 100)
 	prompts := make(chan string)
+	// ttsDone for signalling we're done talking
+	ttsDone := make(chan struct{})
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	log.Println("launching workers")
 
 	g.Go(func() error {
-		return t.Stream(ctx, pipeWriter, ttsChunks)
+		return t.Stream(ctx, pipeWriter, ttsChunks, ttsDone)
 	})
 	g.Go(func() error {
 		return l.Stream(ctx, prompts, jetChunks, ttsChunks)
@@ -125,7 +127,7 @@ func main() {
 		return s.Reader.Read(ctx, prompts)
 	})
 	g.Go(func() error {
-		return s.Writer.Write(ctx, jetChunks)
+		return s.Writer.Write(ctx, jetChunks, ttsDone)
 	})
 
 	var prompt string
@@ -148,7 +150,7 @@ func main() {
 	case <-ctx.Done():
 	}
 
-	// NOTE: this must run on the main thread otherwise bad things happen
+	// NOTE: this must run on the main thread otherwise bad things happen:
 	// beep uses portaudio which requires to be running on the main thread
 	streamer, format, err := mp3.Decode(pipeReader)
 	if err != nil {

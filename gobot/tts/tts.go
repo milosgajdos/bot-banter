@@ -50,12 +50,27 @@ func New(c Config) (*TTS, error) {
 	}, nil
 }
 
-func (t *TTS) Stream(ctx context.Context, pw *io.PipeWriter, chunks <-chan []byte) error {
+func (t *TTS) flush(ctx context.Context, pw *io.PipeWriter, buf *Buffer, req *playht.CreateTTSStreamReq, done chan struct{}) error {
+	req.Text = buf.String()
+	err := t.client.TTSStream(ctx, pw, req)
+	if err != nil {
+		return err
+	}
+	buf.Reset()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case done <- struct{}{}:
+	}
+	return nil
+}
+
+func (t *TTS) Stream(ctx context.Context, pw *io.PipeWriter, chunks <-chan []byte, done chan struct{}) error {
 	log.Println("launching TTS stream")
 	defer log.Println("done streaming TTS")
 	defer pw.Close()
 
-	chunkBuf := NewFixedSizeBuffer(MaxTTSBufferSize)
+	buf := NewFixedSizeBuffer(MaxTTSBufferSize)
 	req := &playht.CreateTTSStreamReq{
 		Voice:        t.config.VoiceID,
 		Quality:      t.config.Quality,
@@ -71,24 +86,21 @@ func (t *TTS) Stream(ctx context.Context, pw *io.PipeWriter, chunks <-chan []byt
 			return ctx.Err()
 		case chunk := <-chunks:
 			if len(chunk) == 0 {
-				req.Text = chunkBuf.String()
-				err := t.client.TTSStream(ctx, pw, req)
-				if err != nil {
+				if err := t.flush(ctx, pw, buf, req, done); err != nil {
 					return err
 				}
-				chunkBuf.Reset()
 				continue
 			}
-			n, err := chunkBuf.Write(chunk)
+			n, err := buf.Write(chunk)
 			if err != nil {
 				if err == ErrBufferFull {
-					req.Text = chunkBuf.String()
-					err := t.client.TTSStream(ctx, pw, req)
-					if err != nil {
+					if err := t.flush(ctx, pw, buf, req, done); err != nil {
 						return err
 					}
-					chunkBuf.Reset()
-					if _, err := chunkBuf.Write(chunk[n:]); err != nil {
+					// NOTE: flush resets the buffer and we need
+					// to write the remaining chunks to it which
+					// have not fitted into the buffer on the last write.
+					if _, err := buf.Write(chunk[n:]); err != nil {
 						return err
 					}
 					continue
