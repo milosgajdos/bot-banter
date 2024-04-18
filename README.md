@@ -7,18 +7,52 @@
 
 # HOWTO
 
-Run NATS
+There are a few prerequisites:
+* [nats](https://nats.io/)
+* sound/audio libraries on some platforms
+
+## Run NATS
+
+Both bots use [nats](https://nats.io/) as their communcation channel.
+
+### Homebrew
+
+Install
+```shell
+brew tap nats-io/nats-tools
+brew install nats nats-server
 ```
-nix-shell -p nats-server
+
+Run:
+```shell
 nats-server -js
 ```
 
-Start a `gobot`:
+### Nix
+
+```shell
+nix-shell -p nats-server 
+nats-server -js
 ```
+
+## Audio libraries
+
+If you are running on Linux you need to install the following libraries -- assuming you want to play with the bot speaking service
+
+> [!NOTE]
+> This is for Ubuntu Linux, other distros have likely different package names
+```shell
+sudo apt install -y --no-install-recommends libasound2-dev pkg-config
+```
+
+## Run the bots
+
+Start the `gobot`:
+```shell
 go run ./gobot/...
 ```
 
-Start a `rustbot`:
-```
+Start the `rustbot`:
+```shell
 cargo run --manifest-path rustbot/Cargo.toml
 ```
