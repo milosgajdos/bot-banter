@@ -9,6 +9,7 @@
 
 There are a few prerequisites:
 * [nats](https://nats.io/)
+* [ollama](https://ollama.com/)
 * sound/audio libraries on some platforms
 
 ## Run NATS
@@ -31,10 +32,24 @@ nats-server -js
 ### Nix
 
 ```shell
-nix-shell -p nats-server 
+nix-shell -p nats-server natscli
 nats-server -js
 ```
 
+## Run Ollama
+
+Download it from the [official site](https://ollama.com/) or see for the Nix install below.
+
+### Nix
+
+```
+nix-shell -p ollama
+```
+
+Run a model you decide to use
+```shell
+ollama run llama2
+```
 ## Audio libraries
 
 If you are running on Linux you need to install the following libraries -- assuming you want to play with the bot speaking service
