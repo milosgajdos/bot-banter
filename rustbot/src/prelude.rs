@@ -21,6 +21,8 @@ safety, without sacrificing performance. Can you tell me what are some of the bi
 strengths of Go that make it stand out from other programming languages?
 Question: ";
 
-pub const DEFAULT_VOICE_ID: &str = "s3://mockingbird-prod/abigail_vo_6661b91f-4012-44e3-ad12-589fbdee9948/voices/speaker/manifest.json";
+pub const DEFAULT_VOICE_ID: &str =
+    "s3://voice-cloning-zero-shot/40738a3a-34bb-4ac3-97c5-aed7b31ccf1d/chucksaad/manifest.json";
 pub const MAX_TTS_BUFFER_SIZE: usize = 1000;
 pub const AUDIO_BUFFER_SIZE: usize = 1024 * 10;
+pub const AUDIO_INTERVAL: u64 = 500;
