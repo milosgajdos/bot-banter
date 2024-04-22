@@ -21,9 +21,7 @@ mod tts;
 async fn main() -> Result<()> {
     let args = cli::App::parse();
 
-    let system_prompt = args.prompt.system.unwrap();
     let seed_prompt = args.prompt.seed.unwrap();
-    let prompt = system_prompt + "\n" + &seed_prompt;
 
     // NOTE: we could also add Stream::builder to the jet module
     // and instead of passing config we could build it by chaining methods.
@@ -41,7 +39,7 @@ async fn main() -> Result<()> {
     let c = llm::Config {
         hist_size: args.llm.hist_size,
         model_name: args.llm.model_name,
-        seed_prompt: Some(prompt),
+        seed_prompt: Some(seed_prompt),
         ..llm::Config::default()
     };
     let l = llm::LLM::new(c);

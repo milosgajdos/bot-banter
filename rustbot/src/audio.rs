@@ -79,6 +79,8 @@ pub async fn play(
             sink.append(source);
         }
     }
-    sink.sleep_until_end();
+    if !sink.empty() {
+        sink.sleep_until_end();
+    }
     Ok(())
 }

@@ -16,8 +16,6 @@ pub struct App {
 
 #[derive(Args, Debug)]
 pub struct Prompt {
-    #[arg(long, default_value = DEFAULT_SYSTEM_PROMPT, help = "system prompt")]
-    pub system: Option<String>,
     #[arg(long, default_value = DEFAULT_SEED_PROMPT, help = "instruction prompt")]
     pub seed: Option<String>,
 }
