@@ -57,14 +57,14 @@ async fn main() -> Result<()> {
     let (prompts_tx, prompts_rx) = mpsc::channel::<String>(32);
     let (jet_chunks_tx, jet_chunks_rx) = mpsc::channel::<Bytes>(32);
     let (tts_chunks_tx, tts_chunks_rx) = mpsc::channel::<Bytes>(32);
-    let (audio_done_tx, audio_done_rx) = watch::channel(false);
+    let (aud_done_tx, aud_done_rx) = watch::channel(false);
 
     // NOTE: used for cancellation when SIGINT is trapped.
     let (watch_tx, watch_rx) = watch::channel(false);
     let jet_wr_watch_rx = watch_rx.clone();
     let jet_rd_watch_rx = watch_rx.clone();
     let tts_watch_rx = watch_rx.clone();
-    let audio_watch_rx = watch_rx.clone();
+    let aud_watch_rx = watch_rx.clone();
 
     println!("launching workers");
 
@@ -74,12 +74,9 @@ async fn main() -> Result<()> {
 
     let tts_stream = tokio::spawn(t.stream(audio_wr, tts_chunks_rx, tts_watch_rx));
     let llm_stream = tokio::spawn(l.stream(prompts_rx, jet_chunks_tx, tts_chunks_tx, watch_rx));
-    let jet_write = tokio::spawn(
-        s.writer
-            .write(jet_chunks_rx, audio_done_rx, jet_wr_watch_rx),
-    );
+    let jet_write = tokio::spawn(s.writer.write(jet_chunks_rx, aud_done_rx, jet_wr_watch_rx));
     let jet_read = tokio::spawn(s.reader.read(prompts_tx, jet_rd_watch_rx));
-    let audio_task = tokio::spawn(audio::play(audio_rd, sink, audio_done_tx, audio_watch_rx));
+    let audio_task = tokio::spawn(audio::play(audio_rd, sink, aud_done_tx, aud_watch_rx));
     let sig_handler: JoinHandle<Result<()>> = tokio::spawn(async move {
         tokio::select! {
             _ = signal::ctrl_c() => {

@@ -41,7 +41,6 @@ pub async fn play(
                         match Decoder::new(cursor) {
                             Ok(source) => {
                                 sink.append(source);
-                                audio_data.clear();
                                 last_play_time = Instant::now();
                                 has_played_audio = true;
                             }
@@ -53,9 +52,9 @@ pub async fn play(
                 }
             }
             _ = interval.tick() => {
-                // No audio data received in the past interval_duration and we've
-                // played some audio -- this means we can proceed with dialogue
-                // by writing a followup question into JetStream by notifying jet::writer.
+                // No audio data received in the past interval_duration ms and we've
+                // already played some audio -- that means we can proceed with dialogue
+                // by writing a followup question into JetStream through jet::writer.
                 if has_played_audio && last_play_time.elapsed() >= interval_duration && sink.empty() {
                     if !audio_data.is_empty() {
                         let cursor = Cursor::new(audio_data.clone().freeze().to_vec());
@@ -64,6 +63,8 @@ pub async fn play(
                             audio_data.clear();
                         }
                     }
+                    sink.sleep_until_end();
+                    // NOTE: notify jet::writer
                     audio_done.send(true)?;
                     has_played_audio = false;
                 }
@@ -73,10 +74,9 @@ pub async fn play(
 
     // Flush any remaining data
     if !audio_data.is_empty() {
-        let cursor = Cursor::new(audio_data.to_vec());
-        match Decoder::new(cursor) {
-            Ok(source) => sink.append(source),
-            Err(e) => println!("Remaining data could not be decoded: {}", e),
+        let cursor = Cursor::new(audio_data.clone().to_vec());
+        if let Ok(source) = Decoder::new(cursor) {
+            sink.append(source);
         }
     }
     sink.sleep_until_end();
