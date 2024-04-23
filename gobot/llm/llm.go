@@ -7,6 +7,7 @@ import (
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/ollama"
+	"golang.org/x/sync/errgroup"
 )
 
 type Config struct {
@@ -33,7 +34,15 @@ func New(c Config) (*LLM, error) {
 	}, nil
 }
 
-func (l *LLM) Stream(ctx context.Context, prompts chan string, chunks chan []byte) error {
+func sendChunk(ctx context.Context, chunks chan []byte, chunk []byte) error {
+	select {
+	case <-ctx.Done():
+	case chunks <- chunk:
+	}
+	return nil
+}
+
+func (l *LLM) Stream(ctx context.Context, prompts chan string, jetChunks, ttsChunks chan []byte) error {
 	log.Println("launching LLM stream")
 	defer log.Println("done streaming LLM")
 	chat := NewHistory(int(l.histSize))
@@ -52,7 +61,14 @@ func (l *LLM) Stream(ctx context.Context, prompts chan string, chunks chan []byt
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
-					case chunks <- chunk:
+					default:
+						// NOTE: we could just fire and forget here, but let's be clean
+						g, ctx := errgroup.WithContext(ctx)
+						g.Go(func() error { return sendChunk(ctx, jetChunks, chunk) })
+						g.Go(func() error { return sendChunk(ctx, ttsChunks, chunk) })
+						if err := g.Wait(); err != nil {
+							return err
+						}
 						return nil
 					}
 				}))

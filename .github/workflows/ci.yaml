@@ -20,6 +20,10 @@ jobs:
           - '1.22'
 
     steps:
+    - name: Update apt
+      run: sudo apt update
+    - name: Install alsa
+      run: sudo apt install -y --no-install-recommends libasound2-dev pkg-config
 
     - name: Set up Go ${{ matrix.go }}
       uses: actions/setup-go@v5
@@ -72,6 +76,10 @@ jobs:
           - '1.22'
 
     steps:
+    - name: Update apt
+      run: sudo apt update
+    - name: Install alsa
+      run: sudo apt install -y --no-install-recommends libasound2-dev pkg-config
 
     - name: Check out source code
       uses: actions/checkout@v4
@@ -93,6 +101,11 @@ jobs:
       CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
     steps:
+      - name: Update apt
+        run: sudo apt update
+      - name: Install alsa
+        run: sudo apt install -y --no-install-recommends libasound2-dev pkg-config
+
       - name: check out code
         uses: actions/checkout@v4
 
