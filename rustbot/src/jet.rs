@@ -128,7 +128,7 @@ impl Writer {
                 },
                 Some(chunk) = chunks.recv() => {
                     if chunk.is_empty() {
-                        let msg = String::from_utf8(b.to_vec()).unwrap();
+                        let msg = String::from_utf8(b.to_vec())?;
                         println!("\n[A]: {}", msg);
                         loop {
                             tokio::select! {

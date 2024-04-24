@@ -150,8 +150,7 @@ func main() {
 	case <-ctx.Done():
 	}
 
-	// NOTE: this must run on the main thread otherwise bad things happen:
-	// beep uses portaudio which requires to be running on the main thread
+	// TODO: this must run on the main thread otherwise bad things happen
 	streamer, format, err := mp3.Decode(pipeReader)
 	if err != nil {
 		log.Printf("failed to initialize MP3 decoder: %v\n", err)
