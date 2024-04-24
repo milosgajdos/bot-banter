@@ -3,9 +3,8 @@ use clap::Parser;
 use prelude::*;
 use rodio::{OutputStream, Sink};
 use tokio::{
-    self, io, signal,
+    self, io,
     sync::{mpsc, watch},
-    task::JoinHandle,
 };
 
 mod audio;
@@ -15,6 +14,7 @@ mod history;
 mod jet;
 mod llm;
 mod prelude;
+mod signal;
 mod tts;
 
 #[tokio::main]
@@ -75,16 +75,10 @@ async fn main() -> Result<()> {
     let jet_write = tokio::spawn(s.writer.write(jet_chunks_rx, aud_done_rx, jet_wr_watch_rx));
     let jet_read = tokio::spawn(s.reader.read(prompts_tx, jet_rd_watch_rx));
     let audio_task = tokio::spawn(audio::play(audio_rd, sink, aud_done_tx, aud_watch_rx));
-    let sig_handler: JoinHandle<Result<()>> = tokio::spawn(async move {
-        tokio::select! {
-            _ = signal::ctrl_c() => {
-                println!("shutting down, received SIGINT signal...");
-                watch_tx.send(true)?;
-            }
-        }
-        Ok(())
-    });
+    let sig_handler = tokio::spawn(signal::trap(watch_tx));
 
+    // NOTE: we're not waiting for the signal handler here:
+    // we abort it once any of the spawn worker tasks exits.
     match tokio::try_join!(tts_stream, llm_stream, jet_write, jet_read, audio_task) {
         Ok(_) => {}
         Err(e) => {
