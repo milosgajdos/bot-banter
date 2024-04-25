@@ -52,7 +52,8 @@ flowchart TB
 
 > [!NOTE]
 > Mermaid does not have proper support for controlling layout or even basic graph legends
-> There are some not very good workaround, so I've opted not to use them in this README
+> There are some terrible workarounds, so I've opted not to use them in this README, hence
+> the diagram might feel a bit unwieldy
 
 ```mermaid
 flowchart TB
