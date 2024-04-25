@@ -54,7 +54,7 @@ flowchart TB
 > Mermaid does not have proper support for controlling layout or even basic graph legends
 > There are some not very good workaround, so I've opted not to use them in this README
 
-````mermaid
+```mermaid
 flowchart TB
     ollama{Ollama}
     playht{PlayHT}
