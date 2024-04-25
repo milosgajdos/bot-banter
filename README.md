@@ -11,6 +11,43 @@ It uses [NATS jetstream](https://docs.nats.io/nats-concepts/jetstream) for messa
 > This project was built purely for educational purposes and thus is likely ridden with bugs, inefficiencies, etc.
 > You should consider this project as highly experimental.
 
+## Bot Conversation Flow
+
+```mermaid
+sequenceDiagram
+    participant GoTTS as TTS
+    participant GoLLM as LLM
+    participant Gobot
+    participant Rustbot
+    participant RustLLM as LLM
+    participant RustTTS as TTS
+    Gobot->>+Rustbot: Hi Rustbot!
+    Rustbot->>RustLLM: Hi Rustbot!
+    RustLLM->>RustTTS: Hi Gobot!
+    RustLLM->>Rustbot: Hi Gobot!
+    Rustbot->>-Gobot: Hi Gobot!
+    activate Gobot
+    Gobot->>GoLLM: Hi Gobot!
+    GoLLM->>GoTTS: Teach me about Rust!
+    GoLLM->>Gobot: Teach me about Rust!
+    Gobot->>-Rustbot: Teach me about Rust!
+```
+
+## Architecture
+
+Zoomed in view on the high-level architecture:
+
+```mermaid
+flowchart TB
+    subgraph " "
+        playht(PlayHT API)
+        ollama(Ollama)
+    end
+    bot <-->ollama
+    bot <-->playht
+    bot <--> NATS[[NATS JetStream]]
+```
+
 # HOWTO
 
 There are a few prerequisites:
