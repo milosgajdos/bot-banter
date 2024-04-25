@@ -71,19 +71,28 @@ flowchart TB
         Go(go)
         Rust(rust)
     end
-    Go-->jetReader
-    jetWriter-->Rust
-    jetReader-->prompts
-    prompts-->llm
+    Go-- 1. -->jetReader
+    jetWriter-- 7. -->Rust
+    jetReader-- 2. -->prompts
+    prompts-- 3. -->llm
     llm-->ollama
-    llm-->ttsChunks
-    llm-->jetChunks
+    llm-- 4. -->ttsChunks
+    llm-- 4. -->jetChunks
     jetChunks-->jetWriter
     ttsChunks-->tts
-    tts-->playht
-    tts-->ttsDone
+    tts-- 5. -->playht
+    tts-- 6. -->ttsDone
     ttsDone-->jetWriter
 ```
+
+1. `jet.Reader` receives a message published on a JetStream subject
+2. `jet.Reader` sends this message to the `prompts` channel
+3. `llm` worker reads the messages sent to the `prompts` channel and forwards them to ollama for LLM generation
+4. ollama generates the response and the `llm` worker sends it to both `ttsChunks` and `jetChunks` channels
+5. `tts` worker reads the message and sends the message to PlayHT API and streams the audio to the default audio device;
+6.  once the playback has finished `tts` worker notifies `jet.Writer` via the `ttsDone` channel that it's done playing audio
+6. `jet.Writer` receives the notification on the `ttsDone` channel and publishes the message it received on `jetChunks` channel
+     to a JetStream subject
 
 # HOWTO
 
@@ -169,5 +178,3 @@ Start the `rustbot`:
 ```shell
 cargo run --manifest-path rustbot/Cargo.toml
 ```
-
-
