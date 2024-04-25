@@ -48,6 +48,42 @@ flowchart TB
     bot <--> NATS[[NATS JetStream]]
 ```
 
+## Tasks, Goroutines, Channels
+
+> [!NOTE]
+> Mermaid does not have proper support for controlling layout or even basic graph legends
+> There are some not very good workaround, so I've opted not to use them in this README
+
+````mermaid
+flowchart TB
+    ollama{Ollama}
+    playht{PlayHT}
+    llm((llm))
+    tts((tts))
+    jetWriter((jetWriter))
+    jetReader((jetReader))
+    ttsChunks(ttsChunks)
+    jetChunks(jetChunks)
+    prompts(prompts)
+    ttsDone(ttsDone)
+    subgraph NATS JetStream
+        Go(go)
+        Rust(rust)
+    end
+    Go-->jetReader
+    jetWriter-->Rust
+    jetReader-->prompts
+    prompts-->llm
+    llm-->ollama
+    llm-->ttsChunks
+    llm-->jetChunks
+    jetChunks-->jetWriter
+    ttsChunks-->tts
+    tts-->playht
+    tts-->ttsDone
+    ttsDone-->jetWriter
+```
+
 # HOWTO
 
 There are a few prerequisites:
