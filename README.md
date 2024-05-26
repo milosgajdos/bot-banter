@@ -11,6 +11,10 @@ It uses [NATS jetstream](https://docs.nats.io/nats-concepts/jetstream) for messa
 > This project was built purely for educational purposes and thus is likely ridden with bugs, inefficiencies, etc.
 > You should consider this project as highly experimental.
 
+Click to watch/listen a sample conversation:
+
+[![Bot Banter](http://img.youtube.com/vi/w01DsREeKU4/0.jpg)](http://www.youtube.com/watch?v=w01DsREeKU4)
+
 ## Bot Conversation Flow
 
 ```mermaid
