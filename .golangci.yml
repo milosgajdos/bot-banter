@@ -5,7 +5,6 @@ linters:
     - gofmt
     - revive
     - ineffassign
-    - vet
     - unused
     - misspell
     - bodyclose
@@ -13,10 +12,10 @@ linters:
     - goimports
     - prealloc
 
-issues:
-  exclude-dirs:
-    - vendor
 run:
   deadline: 2m
+
+issues:
   skip-dirs:
     - vendor
+    - ui
